@@ -24,6 +24,17 @@ All services start with sensible defaults. No config file needed:
 - **Clerk** on `http://localhost:4011`
 - **Linear** on `http://localhost:4012`
 - **Twilio** on `http://localhost:4013`
+- **Chargebee** on `http://localhost:4014`
+- **Zendesk** on `http://localhost:4015`
+- **Mailgun** on `http://localhost:4016`
+- **Document360** on `http://localhost:4017`
+- **Defender for Endpoint** on `http://localhost:4018`
+- **Pennylane** on `http://localhost:4019`
+- **SentinelOne** on `http://localhost:4020`
+- **Microsoft Graph** on `http://localhost:4021`
+- **Elastic** on `http://localhost:4022`
+- **CyberSOAR** on `http://localhost:4023`
+- **Scaleway** on `http://localhost:4024`
 
 Stripe webhooks configured with a secret include a `Stripe-Signature` header signed over the timestamp and raw request body.
 
@@ -188,7 +199,7 @@ afterAll(() => Promise.all([github.close(), vercel.close()]))
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `service` | *(required)* | Service name: `'vercel'`, `'github'`, `'google'`, `'slack'`, `'apple'`, `'microsoft'`, `'okta'`, `'aws'`, `'resend'`, `'stripe'`, `'mongoatlas'`, `'clerk'`, `'linear'`, or `'twilio'` |
+| `service` | *(required)* | Service name: `'vercel'`, `'github'`, `'google'`, `'slack'`, `'apple'`, `'microsoft'`, `'okta'`, `'aws'`, `'resend'`, `'stripe'`, `'mongoatlas'`, `'clerk'`, `'linear'`, `'twilio'`, `'chargebee'`, `'zendesk'`, `'mailgun'`, `'document360'`, `'defender'`, `'pennylane'`, `'sentinelone'`, `'graph'`, `'elastic'`, `'cybersoar'`, or `'scaleway'` |
 | `port` | `4000` | Port for the HTTP server |
 | `seed` | none | Inline seed data (same shape as YAML config) |
 | `baseUrl` | none | Override advertised base URL. Per-service `baseUrl` in seed config takes highest priority, then this option, then `EMULATE_BASE_URL` env var (supports `{service}`), then `PORTLESS_URL` (supports `{service}`, automatically set by the `portless` CLI wrapper), then `http://localhost:<port>`. |
@@ -979,6 +990,388 @@ To test inbound SMS webhooks, configure a seeded phone number `sms_url`, then ca
 
 Current Twilio limits: no carrier delivery, A2P 10DLC, toll-free verification, real phone number purchasing, exact rate limits, Studio, Flex, TaskRouter, Video, Sync, Segment, SendGrid, Conversations SDK websocket behavior, or complete TwiML interpreter.
 
+## Chargebee API
+
+Stateful Chargebee API v2 emulation for Product Catalog 2.0 sites with customers and account hierarchy, item families, items, item prices, coupons, subscriptions, invoices, credit notes, transactions, payment sources, hosted pages, portal sessions, estimates, events, the delorean time machine, Basic-auth webhooks, and an inspector. No real payments are processed.
+
+Default local credentials:
+
+```text
+CHARGEBEE_SITE=emulate-test
+CHARGEBEE_API_KEY=test_emulate_chargebee_api_key
+```
+
+The default seed includes item family `local-products`, plan `pro-plan` with prices `pro-plan-USD-Monthly` and `pro-plan-USD-Yearly`, addon `extra-seats-USD-Monthly`, charge `setup-fee-USD`, coupon `WELCOME10`, customer `local-customer` with a valid test card, and active subscription `local-subscription`.
+
+### REST Routes
+
+All API routes live under `/api/v2` and use HTTP Basic auth with the API key as the username.
+
+- `POST /api/v2/customers`, `GET /api/v2/customers`, `GET /api/v2/customers/{id}`, `POST /api/v2/customers/{id}`, `POST /api/v2/customers/{id}/delete` - customers with `cf_*` custom fields and Chargebee list filters
+- `POST /api/v2/customers/{id}/relationships`, `GET /api/v2/customers/{id}/hierarchy` - account hierarchy
+- `POST /api/v2/item_families`, `POST /api/v2/items`, `POST /api/v2/item_prices`, `GET /api/v2/item_prices` - Product Catalog 2.0
+- `POST /api/v2/coupons/create_for_items`, `GET /api/v2/coupons` - coupons
+- `POST /api/v2/customers/{id}/subscription_for_items`, `POST /api/v2/subscriptions/create_with_items`, `POST /api/v2/customers/{id}/import_for_items` - create subscriptions
+- `GET /api/v2/subscriptions`, `GET /api/v2/subscriptions/{id}`, `POST /api/v2/subscriptions/{id}/update_for_items`, `cancel_for_items`, `remove_scheduled_cancellation`, `reactivate`, `pause`, `resume`, `change_term_end`, `delete` - subscription lifecycle with proration
+- `GET /api/v2/invoices`, `GET /api/v2/invoices/{id}`, `POST /api/v2/invoices/{id}/pdf`, `record_payment`, `collect_payment`, `void`, `write_off`, `refund`, `apply_credits`, `POST /api/v2/invoices/create_for_charge_items_and_charges` - invoices
+- `POST /api/v2/credit_notes`, `GET /api/v2/credit_notes`, `GET /api/v2/transactions` - credit notes and transactions
+- `POST /api/v2/payment_sources/create_card`, `create_using_token`, `GET /api/v2/payment_sources`, `POST /api/v2/payment_sources/{id}/delete` - payment sources
+- `POST /api/v2/hosted_pages/checkout_new_for_items`, `checkout_existing_for_items`, `checkout_one_time_for_items`, `manage_payment_sources`, `collect_now`, `GET /api/v2/hosted_pages/{id}` - hosted pages, with the checkout UI at `GET /pages/v3/{id}/`
+- `POST /api/v2/portal_sessions`, `POST /api/v2/portal_sessions/{id}/activate` - portal sessions, with the portal UI at `GET /portal/v2/authenticate`
+- `POST /api/v2/estimates/create_subscription_for_items`, `update_subscription_for_items`, `GET /api/v2/subscriptions/{id}/renewal_estimate` - estimates
+- `GET /api/v2/events` - event log
+- `GET /api/v2/time_machines/delorean`, `POST /api/v2/time_machines/delorean/travel_forward`, `start_afresh` - time machine
+- `GET /` - tabbed inspector for customers, subscriptions, invoices, catalog, payments, hosted pages, events, auth, and webhook deliveries
+
+### Billing Behavior
+
+Active subscriptions generate a term invoice on creation and on each renewal. Customers with `auto_collection` on are charged against their primary payment source; creating a paid subscription without a payment source fails with `payment_method_not_present`, like Chargebee. Customers with `auto_collection` off get `payment_due` invoices that `record_payment` settles. Test card `4111111111111111` always succeeds and `4000000000000002` always declines, producing `payment_failed` events. Travelling forward with the time machine ends trials, renews terms, applies scheduled changes, and executes scheduled cancellations, pauses, and resumptions.
+
+Chargebee webhooks POST the standard event payload (`id`, `occurred_at`, `source`, `object: "event"`, `api_version: "v2"`, `event_type`, `content`, `webhook_status`). Webhooks configured with `username` and `password` include an `Authorization: Basic` header.
+
+The Chargebee Node SDK works against the emulator with `site: "localhost"`, `hostSuffix: ""`, `protocol: "http"`, and the emulator port.
+
+Current Chargebee limits: Product Catalog 1.0 endpoints (plans, addons, `POST /subscriptions`), taxes, exchange rates, usage-based billing, quotes, orders, gifts, contract terms, dunning retries, advance invoices, Chargebee.js tokenization, and the JS checkout drop-in are not implemented.
+
+## Zendesk API
+
+Stateful Zendesk Support API v2 emulation with tickets, comments, audits, and metrics, requests, users, organizations and memberships, groups, ticket fields and custom fields, tags, search, views, macros, triggers, signed webhooks, uploads, job statuses, incremental exports, an inbound-email simulator, and an inspector. No emails are sent.
+
+Default local credentials:
+
+```text
+ZENDESK_SUBDOMAIN=emulate-support
+ZENDESK_EMAIL=admin@example.com
+ZENDESK_API_TOKEN=test_emulate_zendesk_api_token
+```
+
+The default seed includes an admin, an agent, an end user in organization Example Inc, the Support group, system ticket fields plus a "Case reference" text field and a "Category" dropdown, `english` and `client_id` organization fields, one open ticket, a "Mark as solved" macro, and the six standard views.
+
+### REST Routes
+
+All routes live under `/api/v2` and accept an optional `.json` suffix. Authenticate with `Authorization: Basic base64(email/token:API_TOKEN)`.
+
+- `POST /api/v2/tickets`, `GET /api/v2/tickets`, `GET /api/v2/tickets/{id}`, `PUT /api/v2/tickets/{id}`, `DELETE /api/v2/tickets/{id}`, `GET /api/v2/tickets/show_many`, `POST /api/v2/tickets/create_many`, `PUT /api/v2/tickets/update_many`, `DELETE /api/v2/tickets/destroy_many` - tickets with audits and metrics
+- `POST /api/v2/imports/tickets`, `POST /api/v2/imports/tickets/create_many` - imports with historical timestamps and comments
+- `GET /api/v2/tickets/{id}/comments`, `audits`, `metrics`, `tags`, `incidents`, `satisfaction_rating`, `GET /api/v2/deleted_tickets` - ticket sub-resources
+- `GET /api/v2/requests`, `POST /api/v2/requests`, `GET /api/v2/requests/{id}`, `PUT /api/v2/requests/{id}`, `GET /api/v2/organizations/{id}/requests` - end-user requests with cursor pagination
+- `POST /api/v2/users`, `GET /api/v2/users/search`, `GET /api/v2/users/me`, `POST /api/v2/users/create_or_update`, `DELETE /api/v2/users/destroy_many` - users
+- `POST /api/v2/organizations`, `GET /api/v2/organizations/search`, `PUT /api/v2/organizations/{id}`, `DELETE /api/v2/organizations/destroy_many`, `POST /api/v2/organization_memberships` - organizations and memberships (duplicate memberships return `422`)
+- `GET /api/v2/groups`, `POST /api/v2/group_memberships` - groups
+- `GET /api/v2/ticket_fields`, `POST /api/v2/ticket_fields`, `GET /api/v2/user_fields`, `GET /api/v2/organization_fields`, `GET /api/v2/tags`, `GET /api/v2/custom_statuses` - fields and tags
+- `GET /api/v2/search`, `GET /api/v2/search/count`, `GET /api/v2/search/export` - Zendesk search syntax
+- `GET /api/v2/views`, `GET /api/v2/views/{id}/tickets`, `GET /api/v2/macros`, `GET /api/v2/tickets/{id}/macros/{id}/apply`, `POST /api/v2/triggers` - business rules
+- `POST /api/v2/webhooks`, `GET /api/v2/webhooks/{id}/signing_secret`, `GET /api/v2/webhooks/{id}/invocations` - webhooks
+- `POST /api/v2/uploads`, `GET /api/v2/job_statuses/{id}`, `GET /api/v2/incremental/tickets` - uploads, jobs, exports
+- `POST /_zendesk/simulate/inbound-email` - create a ticket or reply as if an email arrived
+- `GET /` - tabbed inspector for tickets, users, organizations, fields, rules, webhooks, events, and credentials
+
+### Triggers And Webhooks
+
+Triggers evaluate on every ticket create and update. Field and tag actions are applied in a separate audit with `via.channel = "rule"`, and `notification_webhook` actions render placeholders such as `{{ticket.id}}`, `{{ticket.title}}`, `{{ticket.requester.email}}`, and `{{ticket.latest_comment}}` into the request body. Webhooks subscribed to `zen:event-type:user.*`, `zen:event-type:organization.*`, or `zen:event-type:ticket.*` receive the Zendesk event envelope. Every delivery is signed with `X-Zendesk-Webhook-Signature` (base64 HMAC-SHA256 over `timestamp + body`) and `X-Zendesk-Webhook-Signature-Timestamp`, and includes the configured Basic, Bearer, or API key header.
+
+Current Zendesk limits: Help Center articles, Talk, Chat, Sunshine Conversations, side conversations, SLA policies, schedules, automations, skills-based routing, multiple ticket forms and brands, sharing agreements, the suspended ticket queue, OAuth authorization flows, rate limiting, and outbound email notifications are not implemented.
+
+## Mailgun API
+
+Stateful Mailgun API emulation with message sending, stored messages, events, the analytics logs API, domains and SMTP credentials, mailing lists and members, suppressions, templates, tags, stats, signed webhooks, address validation, inbound routes, a simulator, and an inspector. No email leaves the machine.
+
+Default local credentials:
+
+```text
+MAILGUN_URL=http://localhost:4016
+MAILGUN_API_KEY=key-emulate-mailgun-test
+MAILGUN_DOMAIN=mail.example.com
+MAILGUN_WEBHOOK_SIGNING_KEY=emulate-mailgun-webhook-key
+```
+
+The default seed includes domain `mail.example.com` with tracking on, a sandbox domain with authorized recipient `test@example.com`, mailing list `team@mail.example.com` with two members, and a `welcome` template.
+
+### REST Routes
+
+Authenticate with HTTP Basic using any username and the API key as password. `mailgun.js` works by setting its `url` option to the emulator.
+
+- `POST /v3/{domain}/messages`, `POST /v3/{domain}/messages.mime` - send (form or multipart, attachments, tags, variables, templates, recipient variables, test mode)
+- `GET /v3/domains/{domain}/messages/{key}` - stored message, `POST` to resend; HTML preview at `GET /_mailgun/messages/{key}`
+- `GET /v3/{domain}/events`, `POST /v1/analytics/logs`, `GET /v3/{domain}/stats/total` - events, logs, and stats
+- `GET|POST /v4/domains`, `GET|PUT|DELETE /v4/domains/{name}`, `verify`, `connection`, `tracking`, `credentials`, `GET|POST /v5/sandbox/auth_recipients` - domains
+- `GET /v3/lists/pages`, `GET|POST /v3/lists`, `GET|PUT|DELETE /v3/lists/{address}`, `GET|POST /v3/lists/{address}/members`, `members/pages`, `members.json`, `GET|PUT|DELETE /v3/lists/{address}/members/{member}` - mailing lists
+- `GET|POST|DELETE /v3/{domain}/bounces`, `unsubscribes`, `complaints`, `whitelists` and per-address routes - suppressions
+- `GET|POST|DELETE /v3/{domain}/templates`, template and version CRUD - templates
+- `GET /v3/{domain}/tags`, tag CRUD and stats - tags
+- `GET|POST /v3/domains/{domain}/webhooks`, `GET|PUT|DELETE /v3/domains/{domain}/webhooks/{type}` - webhooks
+- `GET|POST /v4/address/validate` - address validation
+- `GET|POST /v3/routes`, `GET|PUT|DELETE /v3/routes/{id}`, `GET /v3/routes/match` - inbound routes
+- `POST /_mailgun/simulate/inbound`, `POST /_mailgun/simulate/event` - simulate inbound mail through routes and engagement events
+- `GET /` - tabbed inspector for messages, events, lists, suppressions, templates, domains, webhooks, routes, and credentials
+
+### Delivery Behavior
+
+Every send stores the message and records `accepted` and `delivered` events per recipient. Mailing list addresses expand to subscribed members with `%recipient.*%` substitutions. Test recipients: `bounce@...` bounces permanently and is added to the bounces list, `fail@...` fails temporarily, `complaint@...` complains, suppressed addresses fail with `suppress-*` reasons, and sandbox domains reject unauthorized recipients with Mailgun's error. `o:testmode=yes` records `accepted` only.
+
+Webhook payloads are `{ signature: { timestamp, token, signature }, "event-data": {...} }` with `signature = HMAC-SHA256(webhook_signing_key, timestamp + token)`. Inbound route forwards and store notifications post Mailgun's parsed form fields with the same signature fields.
+
+Current Mailgun limits: scheduled delivery is immediate; bulk validation, IP pools, subaccounts, SMTP transport, inbox placement, and dedicated IP management are not implemented.
+
+## Document360 API
+
+Stateful Document360 knowledge base API emulation with project versions and languages, category trees, articles with draft and published versions, search, readers and reader groups, team accounts and team groups, Drive folders and files, an event log, and an inspector.
+
+Default local credentials:
+
+```text
+DOCUMENT360_BASE_URL=http://localhost:4017/v2
+DOCUMENT360_API_TOKEN=test_emulate_document360_token
+```
+
+The default seed includes project "Emulate Knowledge Base" with main version 1 (languages `en` and `fr`), categories "Getting Started" (published "Welcome" and draft "Setup guide" articles) and "FAQ", owner `admin@example.com`, reader groups Customers, MSP, and Distributors, reader `test@example.com` in Customers, and a Drive folder "Documents". Seed entries accept explicit `id` values so applications that reference fixed reader group GUIDs work unchanged.
+
+### REST Routes
+
+Authenticate with the `api_token` header (also accepted: `x-api-token` or `Authorization: Bearer`). Every route is served under both `/v2` and `/v1`, and `GET /v2/Readers/` with a trailing slash matches like the real API. Responses use the Document360 envelope `{ result, extension_data, success, errors, warnings, information }`.
+
+- `GET|POST /v2/ProjectVersions`, `GET|PUT|DELETE /v2/ProjectVersions/{id}`, `GET /v2/ProjectVersions/{id}/categories`, `GET /v2/ProjectVersions/{id}/articles` - project versions (new versions clone their base version)
+- `GET|POST /v2/Language/{versionId}`, `PUT|DELETE /v2/Language/{versionId}/{code}` - languages
+- `POST /v2/Categories`, `GET|PUT|DELETE /v2/Categories/{id}/{lang}`, `GET /v2/Categories/{id}/{lang}/articles` - categories with translations and `is_fall_back_content`
+- `POST /v2/Articles`, `GET|PUT|DELETE /v2/Articles/{id}/{lang}`, `versions`, `versions/{n}`, `fork`, `publish`, `settings`, `reviewreminder` - articles; editing a published article creates a new version, `isForDisplay=true` returns the public version
+- `GET /v2/Search/{versionId}?searchQuery=` - full-text search over published articles with highlights
+- `GET|POST /v2/Readers`, `GET /v2/Readers/?search_email=`, `GET|PUT|DELETE /v2/Readers/{id}`, `GET|POST /v2/Readers/groups`, `GET|PUT|DELETE /v2/Readers/groups/{id}` - readers and reader groups
+- `GET|POST /v2/Teams`, `GET|PUT|DELETE /v2/Teams/{id}`, `GET /v2/Teams/{id}/articles`, `GET|POST /v2/Teams/groups`, `GET|PUT|DELETE /v2/Teams/groups/{id}` - team accounts (by id or email) and groups; the last owner is protected
+- `GET|POST /v2/Drive/Folders`, `GET|PUT|DELETE /v2/Drive/Folders/{id}`, `GET|POST /v2/Drive/Folders/{id}/Items` (multipart or JSON), `GET /v2/Drive/Items`, `GET|PUT|DELETE /v2/Drive/Items/{id}` - Drive; file content is served at `/_document360/drive/{id}/{name}`
+- `GET /v2/Project`, `GET /v2/Project/tokens` - project summary and masked tokens
+- `GET|DELETE /_document360/events` - event log (`reader.created`, `article.published`, and so on)
+- `GET /` - tabbed inspector for articles, categories, versions, readers, team, drive, events, and auth
+
+Current Document360 limits: SSO invitations, article comments and feedback, analytics, redirects, custom pages, workflow assignments, AI features, and the public knowledge base site are not implemented.
+
+## Microsoft Defender for Endpoint API
+
+Stateful Microsoft Defender for Endpoint (WDATP) API emulation with Entra client_credentials tokens per tenant, machines with full OData query support, machine actions that progress over time, alerts with evidence, vulnerabilities, software, security recommendations, exposure scores, custom indicators, an advanced hunting KQL subset, entity lookups, a simulator, and an inspector. Data is scoped to the tenant the token was issued for, so one emulator can stand in for many customer tenants.
+
+Default local credentials:
+
+```text
+MS365_DEFENDER_LOGIN_URL=http://localhost:4018
+MS365_DEFENDER_URL=http://localhost:4018/api
+MS365_DEFENDER_SECURITY_CENTER_SCOPE=https://api.securitycenter.microsoft.com
+MS365_DEFENDER_CLIENT_ID=00000000-0000-4000-8000-00000000c1e0
+MS365_DEFENDER_CLIENT_SECRET=test_emulate_defender_client_secret
+MS365_DEFENDER_TENANT_ID=00000000-0000-4000-8000-0000000000de
+```
+
+The default seed includes tenant Contoso with three onboarded machines (a Windows 11 laptop, a Windows Server 2022 file server, and a macOS laptop), one machine that can be onboarded, two alerts with evidence, three CVEs, three software products, three recommendations, and a blocked domain indicator, plus tenant Fabrikam with two machines. Apps can be limited to specific tenants with `tenant_ids`.
+
+### REST Routes
+
+Request a token with `POST /{tenantId}/oauth2/v2.0/token` (`grant_type=client_credentials`, `client_id`, `client_secret`, `scope`); `/oauth2/v2.0/token`, the v1 `/{tenantId}/oauth2/token` form with `resource`, and HTTP Basic client authentication also work. Send the returned JWT as `Authorization: Bearer`. API routes live under `/api` (also without the prefix) and return `@odata.context`, `value`, and `@odata.nextLink` like the real API; errors use `{ error: { code, message, target } }`.
+
+- `GET /api/machines`, `GET /api/machines/{id}`, `findbyip`, `findbytag` - machines with `$filter` (`eq ne gt ge lt le and or not in`, `contains`, `startswith`, `endswith`, datetime literals, `machineTags/any(t: t eq 'x')`), `$top`, `$skip`, `$orderby`, `$select`, `$count`
+- `GET /api/machines/{id}/alerts`, `logonusers`, `machineactions`, `vulnerabilities`, `software`, `recommendations`, `exposurescore` - related data
+- `POST /api/machines/{id}/tags`, `setDeviceValue`, `isolate`, `unisolate`, `restrictCodeExecution`, `unrestrictCodeExecution`, `runAntiVirusScan`, `collectInvestigationPackage`, `offboard`, `StopAndQuarantineFile`, `runliveresponse`, `startInvestigation` - response actions (a `Comment` is required; duplicates return `ActiveRequestAlreadyExists`)
+- `GET /api/machineactions`, `GET /api/machineactions/{id}`, `POST .../cancel`, `GET .../getPackageUri`, `GET .../GetLiveResponseResultDownloadLink?index=` - actions move Pending, InProgress, Succeeded on a configurable timer
+- `GET /api/alerts`, `GET|PATCH /api/alerts/{id}`, `POST /api/alerts/CreateAlertByReference`, `POST /api/alerts/batchUpdate`, `GET /api/alerts/{id}/machine`, `user`, `files`, `ips`, `domains` - alerts
+- `GET /api/vulnerabilities`, `/{id}`, `/{id}/machineReferences`, `/machinesVulnerabilities`; `GET /api/software`, `/{id}`, `machineReferences`, `vulnerabilities`, `distributions`; `GET /api/recommendations`, `/{id}`, `machineReferences`, `software`, `vulnerabilities`; `GET /api/exposureScore`, `/ByMachineGroups`, `GET /api/configurationScore` - threat and vulnerability management
+- `GET|POST|DELETE /api/indicators`, `GET|DELETE /api/indicators/{id}`, `POST /api/indicators/import` - custom indicators (upsert by value and type, hash validation)
+- `POST /api/advancedqueries/run` - KQL subset (`where`, `project`, `project-away`, `extend`, `summarize`, `distinct`, `sort`, `top`, `take`, `count`) over `DeviceInfo`, `DeviceNetworkInfo`, `AlertInfo`, `AlertEvidence`, `DeviceAlertEvents`, `DeviceTvmSoftwareInventory`, `DeviceTvmSoftwareVulnerabilities`, `DeviceTvmSecureConfigurationAssessment`, `DeviceLogonEvents`, `MachineActions`
+- `GET /api/domains/{host}/alerts|machines|stats`, `GET /api/files/{sha}`, `/alerts|machines|stats`, `GET /api/ips/{ip}/alerts|machines|stats`, `GET /api/users/{id}/alerts|machines`, `GET /api/investigations`, `GET /api/machinegroups` - entities
+- `POST /_defender/simulate/alert`, `POST /_defender/simulate/machine`, `POST /_defender/simulate/action-delays`, `GET|DELETE /_defender/events` - simulate detections, sensor check-ins, and action timing
+- `GET /` - tabbed inspector for machines, alerts, actions, vulnerabilities, indicators, tenants, events, and auth
+
+Current Defender limits: incidents, the unified security.microsoft.com Graph API, automated investigation details, live response library files, streaming API, device groups and RBAC roles management, and Defender Vulnerability Management remediation tasks are not implemented.
+
+## Pennylane API
+
+Stateful Pennylane external API v2 emulation with customers (company and individual), suppliers, products, categories and category groups, customer invoices (drafts, finalization with sequential numbering, imports, payments, cancellation with credit notes, appendices, invoice lines, categories, matched transactions), supplier invoices, bank accounts and transactions, journals, ledger accounts, ledger entries, fiscal years, a Chargebee sync simulator, an event log, and an inspector.
+
+Default local credentials:
+
+```text
+PENNYLANE_URL=http://localhost:4019/api/external/v2
+PENNYLANE_API_KEY=test_emulate_pennylane_api_key
+```
+
+The default seed includes company "Emulate SAS", customers Acme SAS, Nimbus MSP, and an individual, one supplier, three products, revenue and expense categories, French journals and ledger accounts, two fiscal years, a bank account with two transactions, a paid invoice `F-2026-0001` with an appendix, an open invoice `F-2026-0002`, an imported Chargebee-style invoice `INV-000123` whose `invoice_number` and `external_reference` both carry the Chargebee id, a draft invoice, and one supplier invoice.
+
+### REST Routes
+
+Authenticate with `Authorization: Bearer <api key>`. Routes are served under `/api/external/v2`, `/v2`, and the bare path. Lists return `{ items, has_more, next_cursor }` with `limit` and `cursor` paging, a `sort` parameter (`-date`), and a `filter` parameter holding JSON such as `[{"field":"invoice_number","operator":"eq","value":"INV-000123"}]` (operators `eq not_eq gt gteq lt lteq in not_in contains starts_with is_null is_not_null`, restricted per field like the real API: `external_reference` accepts only `eq` and `in`). Errors return `{ message, errors: [{ field, message }] }` with 400, 404, or 422.
+
+- `GET|POST|PUT|DELETE /customers`, `GET|POST|PUT /company_customers`, `GET|POST|PUT /individual_customers`, `GET|POST|PUT|DELETE /suppliers` - contacts
+- `GET|POST|PUT|DELETE /products`, `/categories`, `GET|POST /category_groups` - catalog
+- `GET|POST /customer_invoices` (POST creates a draft), `POST /customer_invoices/import`, `GET|PUT|DELETE /customer_invoices/{id}`, `POST .../finalize`, `mark_as_paid`, `send_by_email`, `cancel` (creates an `AV-` credit note), `GET .../invoice_lines`, `GET|PUT .../categories`, `GET|PUT .../matched_transactions`, `GET .../file` - customer invoices
+- `GET|POST /customer_invoices/{id}/appendices`, `DELETE .../appendices/{appendixId}` - appendices (multipart `file` or JSON base64); PDF, XLSX, and PNG, JPEG, TIFF, BMP, GIF images are accepted by default, other types return 422 unless the seed changes `appendix_content_types`
+- `GET /supplier_invoices`, `POST /supplier_invoices/import`, `GET|PUT|DELETE /supplier_invoices/{id}`, `mark_as_paid`, `invoice_lines`, `categories`, `matched_transactions`, `appendices`, `file` - supplier invoices
+- `GET /bank_accounts`, `GET|POST /transactions`, `GET|PUT /transactions/{id}`, `GET|PUT .../categories`, `GET .../matched_invoices` - banking (matching a transaction pays the invoice)
+- `GET|POST /journals`, `GET /journals/{id or code}`, `GET|POST /ledger_accounts`, `GET|PUT /ledger_accounts/{id}`, `GET /fiscal_years`, `GET|POST /ledger_entries` (balanced lines required), `GET /ledger_entries/{id}/lines`, `GET /ledger_entry_lines` - accounting
+- `GET /me`, `GET /company` - the company behind the token
+- `POST /_pennylane/simulate/chargebee-invoice` - mimic Pennylane's Chargebee integration creating a finalized invoice whose `invoice_number` and `external_reference` are the Chargebee invoice id; `POST|GET /_pennylane/simulate/appendix-content-types`; `GET|DELETE /_pennylane/events`
+- `GET /` - tabbed inspector for invoices, appendices, customers, suppliers, catalog, banking, accounting, events, and auth
+
+Current Pennylane limits: quotes, customer invoice templates, e-invoicing, recurring invoices, changelog endpoints, file attachments on transactions, and webhooks are not implemented.
+
+## SentinelOne API
+
+Stateful SentinelOne management console API emulation with the account, site, group, and agent hierarchy, dynamic groups driven by filters, agent response actions, users with scope roles and RBAC roles, threats with mitigation and incident workflows, application risks and CVEs, legacy and unified exclusions, the blocklist, device control rules, policies with inheritance, activities, a simulator, and an inspector.
+
+Default local credentials:
+
+```text
+SENTINELONE_URL=http://localhost:4020
+SENTINELONE_BASE_API_ENDPOINT=/web/api
+SENTINELONE_VERSION=v2.1
+SENTINELONE_API_KEY=test_emulate_sentinelone_api_token
+SENTINELONE_ACCOUNT_ID=2250000000000000001
+SENTINELONE_SITE_ID=2250000000000000101
+```
+
+The default seed includes MSSP account "EMULATE MSSP" with site "ACME CORP" (five agents across Windows, macOS, and Linux with dynamic groups, two threats, and five CVEs) and trial site "GLOBEX #TRIAL", sixteen RBAC roles (predefined ones plus MSP, customer, and SOC roles), a tenant admin, an MSP admin, a SOC analyst, and a customer admin. Seed entries accept explicit ids so applications that reference fixed role or account ids work unchanged.
+
+### REST Routes
+
+Authenticate with `Authorization: ApiToken <token>` (`Bearer` also works). Routes are served under `/web/api/v2.1` and `/web/api/v2.0`. Lists return `{ data, pagination: { nextCursor, totalItems } }` and accept `limit` (1 to 1000, default 10), `cursor`, `skip`, `countOnly`, `skipCount`, `sortBy`, and `sortOrder`; id filters such as `siteIds` and `accountIds` take comma separated values. Errors return `{ errors: [{ code, detail, title }] }` with SentinelOne codes (4000010 validation, 4000030 already exists, 4010010 unauthorized, 4040010 not found).
+
+- `GET|POST /accounts`, `GET|PUT|DELETE /accounts/{id}`, `GET|PUT /accounts/{id}/policy`, `PUT .../revert-policy` - accounts (duplicate names return code 4000030)
+- `GET|POST /sites` (`{ data: { allSites, sites }, pagination }`), `GET|PUT|DELETE /sites/{id}`, `PUT /sites/{id}/reactivate`, `GET|PUT /sites/{id}/policy`, `PUT .../revert-policy` - sites; creation adds a default group and a registration token
+- `GET|POST /groups`, `GET|PUT|DELETE /groups/{id}`, `GET|PUT /groups/{id}/policy`, `PUT .../revert-policy`, `PUT .../move-agents`, `GET .../agents`; `GET|POST /filters`, `GET|PUT|DELETE /filters/{id}` - dynamic groups place agents by `machineTypes` and `osTypes`
+- `GET /agents`, `GET /agents/count`, `GET /agents/passphrases`, `GET /agents/applications`, `GET|PUT /agents/{id}`, `POST /agents/actions/{decommission|recommission|initiate-scan|abort-scan|disconnect|connect|fetch-logs|restart-machine|shutdown|uninstall|approve-uninstall|reject-uninstall|update-software|set-external-id|enable-agent|disable-agent|move-to-site|move-to-group}` - agents with `{ filter: { ids, siteIds, ... } }` selectors returning `{ data: { affected } }`
+- `GET|POST /users`, `GET|PUT|DELETE /users/{id}`, `POST /users/onboarding/send-verification-email`, `login/send-reset-password-email`, `reset-2fa`, `enroll-2fa`, `generate-api-token`, `revoke-api-token`, `GET /user`, `GET /rbac/roles`, `POST /rbac/role`, `GET|DELETE /rbac/role/{id}` - users with `scope` and `scopeRoles`
+- `GET /threats`, `GET /threats/{id}`, `GET .../timeline`, `POST /threats/mitigate/{kill|quarantine|remediate|rollback-remediation|un-quarantine|network-quarantine}`, `POST /threats/incident`, `analyst-verdict`, `mark-as-benign`, `mark-as-threat`, `notes` - threats; mitigation updates the agent's active threat count
+- `GET /application-management/risks/applications` (`highestSeverities`, `countOnly`), `GET /application-management/risks` (`analystVerdict`, `severities`, `skipCount`, `sortBy=detectionDate`), `GET .../risks/{id}`, `POST .../risks/analyst-verdict`, `GET .../inventory/endpoints` - vulnerability management
+- `GET|POST|DELETE /exclusions`, `DELETE /exclusions/{id}`, `GET|POST|DELETE /unified-exclusions`, `GET|POST|DELETE /restrictions`, `GET|POST|DELETE /device-control`, `PUT /device-control/{id}`, `PUT /device-control/{enable|disable}` - scoped with `filter.siteIds`, `filter.accountIds`, `filter.groupIds`, or `scopeLevel` and `scopeLevelId`
+- `GET /activities`, `GET /activities/types`, `GET /system/info`, `GET /system/status`, `GET /private/agents/summary` - platform
+- `POST /_sentinelone/simulate/agent` (register by `siteId` or `registrationToken`), `POST /_sentinelone/simulate/agent-checkin`, `POST /_sentinelone/simulate/threat`, `POST /_sentinelone/simulate/vulnerability`, `GET|DELETE /_sentinelone/events` - simulate sensors, detections, and findings
+- `GET /` - tabbed inspector for accounts and sites, agents, threats, vulnerabilities, users and roles, exclusions, activities, events, and auth
+
+Current SentinelOne limits: Deep Visibility and Power Query, remote shell sessions, remote scripts, the Ranger network inventory, Singularity Identity, firewall control rules, agent package downloads, notifications and webhook syslog, and the Graph API are not implemented.
+
+## Microsoft Graph API
+
+Stateful Microsoft Graph emulation for app-only (client credentials) integrations: tenant-scoped Entra tokens, users with OData queries, guest invitations with redeemable links, directory role definitions and assignments, groups and membership, organization, deleted items, and JSON `$batch`, plus a simulator, an event log, and an inspector.
+
+Default local credentials:
+
+```text
+MS365_TOKENURL=http://localhost:4021
+MS365_GRAPH_URL=http://localhost:4021/v1.0
+MS365_GRAPH_SCOPES=https://graph.microsoft.com/.default
+MS365_CLIENT_ID=00000000-0000-4000-8000-0000000000a9
+MS365_CLIENT_SECRET=test_emulate_graph_client_secret
+MS365_TENANT_ID=00000000-0000-4000-8000-00000000c0de
+```
+
+The default seed includes tenant Contoso (`contoso.onmicrosoft.com`) with a Global Administrator, a Security Administrator who also holds Privileged Authentication Administrator, an accepted guest analyst with Security Administrator, a disabled guest, a regular member, a security group, and a pending invitation, plus tenant Fabrikam with one administrator. Twelve built-in role definitions use their real template ids, so applications that hard code ids such as `194ae4cb-b126-40b2-bd5b-6091b380977d` work unchanged.
+
+### REST Routes
+
+Request a token with `POST /{tenantId}/oauth2/v2.0/token` (`grant_type=client_credentials`; the tenant can be an id or a verified domain), then send it as `Authorization: Bearer` to `/v1.0/...` or `/beta/...`. Collections return `@odata.context`, `value`, optional `@odata.count` (with `$count=true`), and `@odata.nextLink` with `$skiptoken`. Errors use `{ error: { code, message, innerError } }` with Graph codes (`Request_ResourceNotFound`, `Request_BadRequest`, `Authorization_RequestDenied`, `InvalidAuthenticationToken`). Apps seeded with a `permissions` list are limited to it and receive 403 with "Insufficient privileges to complete the operation." elsewhere.
+
+- `GET /v1.0/users` (`$filter` with `eq ne in startsWith endsWith contains and or not`, `$select`, `$top`, `$orderby`, `$count`, `$search`), `POST /v1.0/users`, `GET|PATCH|DELETE /v1.0/users/{id or UPN}`, `GET .../memberOf`, `GET .../transitiveMemberOf`, `GET /v1.0/directory/deletedItems/microsoft.graph.user`, `POST /v1.0/directory/deletedItems/{id}/restore`
+- `POST /v1.0/invitations` - creates a Guest user (`mail` set, UPN in the `#EXT#` form, `externalUserState: PendingAcceptance`) and returns `inviteRedeemUrl`; `resetRedemption` reissues for an existing guest
+- `GET|POST /v1.0/roleManagement/directory/roleAssignments`, `GET|DELETE .../roleAssignments/{id}` (duplicates return the "conflicting object" 400, unknown principals or roles return 404), `GET /v1.0/roleManagement/directory/roleDefinitions`, `GET /v1.0/directoryRoles`, `GET /v1.0/directoryRoles/{id}/members`
+- `GET|POST /v1.0/groups`, `GET|PATCH|DELETE /v1.0/groups/{id}`, `GET /v1.0/groups/{id}/members`, `POST .../members/$ref`, `DELETE .../members/{id}/$ref`
+- `POST /v1.0/$batch` - up to 20 requests executed in order with `dependsOn`, each answered with `{ id, status, headers, body }`
+- `GET /v1.0/organization`, `GET /v1.0/servicePrincipals`, `GET /v1.0/me` (400 for app-only tokens, like Graph)
+- `GET /_graph/redeem/{code}`, `POST /_graph/simulate/accept-invitation`, `POST /_graph/simulate/sign-in`, `GET|DELETE /_graph/events`
+- `GET /` - tabbed inspector for users, role assignments, invitations, groups, tenants, events, and auth
+
+Current Graph limits: delegated flows and `/me`, mail, calendar, Teams, SharePoint, device management, delta queries, change notifications, and PIM eligibility schedules are not implemented.
+
+## Elastic Fleet and Elasticsearch
+
+Stateful emulation of the two Elastic surfaces an integration platform talks to: the Kibana Fleet API (agent policies, package policies, agents, enrollment keys, fleet server hosts) and the Elasticsearch REST API (search with bool queries and aggregations, document indexing, bulk, count, index management), plus a simulator, an event log, and an inspector.
+
+Default local credentials:
+
+```text
+ELASTIC_KIBANA_URL=http://localhost:4022/api
+ELASTIC_KIBANA_API_KEY=test_emulate_elastic_api_key
+ELASTICSEARCH_NODE=http://localhost:4022
+ELASTICSEARCH_API_KEY=ZW11bGF0ZS1lbGFzdGljLWtleTp0ZXN0X2VtdWxhdGVfZWxhc3RpY19hcGlfa2V5
+```
+
+The Elasticsearch key is `base64("emulate-elastic-key:test_emulate_elastic_api_key")`; the raw value, the encoded `id:key` form, and `Basic name:key` are all accepted. The default seed includes a pool of five agent policies (`00000000-0000-4000-8000-00000000e001` to `...e005`) with an o365 and an m365_defender package policy on the first one, an "ACME-CORP Active Directory" policy with two Windows agents, the `fleet-default-fleet-server-host` host, enrollment tokens, and three indices: `services-monitoring` (integration status documents), `logs-o365.audit-default` (aliased `logs-o365.audit`), and `logs-firewall.log-default` (aliased `logs-firewall.log`).
+
+### Fleet Routes
+
+Kibana routes live under `/api/fleet` (also `/kibana/api/fleet`) and require `Authorization: ApiKey <key>`; writes also require a `kbn-xsrf` header. Single items return `{ item }`, lists return `{ items, total, page, perPage }`, and errors use `{ statusCode, error, message }`.
+
+- `GET /api/fleet/agent_policies` (`kuery`, `page`, `perPage`; items include `agents` and `package_policies`), `POST /api/fleet/agent_policies?sys_monitoring=true` (adds the default `system` package policy), `GET|PUT /api/fleet/agent_policies/{id}`, `POST /api/fleet/agent_policies/delete` (`{ agentPolicyId }`, 400 while active agents are enrolled unless `force`), `GET .../{id}/full`
+- `GET|POST /api/fleet/package_policies` (duplicate names return 409, unknown agent policies 404; `inputs` accept the object form or the array form), `GET|PUT|DELETE /api/fleet/package_policies/{id}`, `POST /api/fleet/package_policies/delete`
+- `GET /api/fleet/agents` (`kuery` such as `policy_id:<id>` or `status:degraded`, `showInactive`), `GET /api/fleet/agents/{id}`, `POST .../unenroll`, `PUT .../reassign`, `POST /api/fleet/agents/bulk_unenroll`, `GET /api/fleet/agent_status`, `GET /api/fleet/agents/available_versions`
+- `GET|POST /api/fleet/enrollment_api_keys` (`kuery=<policyId>`), `GET|DELETE /api/fleet/enrollment_api_keys/{id}`
+- `GET /api/fleet/fleet_server_hosts`, `GET /api/fleet/fleet_server_hosts/{id}` (`fleet-default-fleet-server-host` by default), `GET /api/fleet/epm/packages/{name}`, `GET|POST /api/fleet/setup`, `GET /api/status`
+
+### Elasticsearch Routes
+
+Elasticsearch routes live at the root so `new Client({ node: "http://localhost:4022", auth: { apiKey } })` works unchanged; every response carries `X-Elastic-Product: Elasticsearch` and errors use `{ error: { type, reason, root_cause }, status }`.
+
+- `GET /` - product and version info
+- `GET|POST /{index}/_search` and `/_search` - `query` (`bool` with `filter`, `must`, `must_not`, `should`; `term`, `terms`, `range` with date math, `wildcard`, `prefix`, `exists`, `match`, `match_phrase`, `multi_match`, `query_string`, `ids`), `sort`, `from`, `size`, `_source`, `track_total_hits`, and `aggs` (`terms`, `cardinality`, `missing`, `filter`, `filters`, `value_count`, `sum`, `avg`, `min`, `max`, `date_histogram`, `top_hits`, nested)
+- `GET|POST /{index}/_count`, `POST /{index}/_doc`, `PUT|POST /{index}/_doc/{id}`, `PUT /{index}/_create/{id}`, `GET|DELETE /{index}/_doc/{id}`, `POST /{index}/_update/{id}`, `POST /_bulk` and `/{index}/_bulk` (NDJSON `index`, `create`, `update`, `delete`)
+- `PUT|GET|DELETE /{index}` (comma lists, wildcards, and aliases resolve), `GET /{index}/_mapping`, `POST /{index}/_refresh`, `GET /_cat/indices?format=json`, `GET /_cluster/health`, `GET /_security/_authenticate`, `GET /_xpack`
+- `POST /_elastic/simulate/enroll` (`enrollmentToken` or `policyId`, `hostname`, `os`, `status`), `POST /_elastic/simulate/checkin` (`hostname` or `agentId`, `status`), `POST /_elastic/simulate/documents` (`index`, `documents`), `POST /_elastic/simulate/service-status` (`integrationId`, `service`, `status`), `GET|DELETE /_elastic/events`
+- `GET /_elastic` - tabbed inspector for agent policies, integrations, agents, indices, events, and auth (the root path belongs to Elasticsearch)
+
+Current Elastic limits: scoring and relevance, analyzers and text tokenization, scripted fields and runtime mappings, `_msearch`, scroll and point in time, `_update_by_query` and `_delete_by_query`, ILM and data stream management, Kibana saved objects, alerting, and the real Fleet Server checkin protocol are not implemented.
+
+## CyberSOAR API
+
+Stateful emulation of the CyberSOAR incident API, the SOC case management backend whose alert feed drives customer security reports: incident alerts with namespace, service, verdict, status, and ingest window filters, paging with `nextPage`, cases, stats, and customers, plus a simulator, an event log, and an inspector.
+
+Default local credentials:
+
+```text
+CYBERSOAR_URL=http://localhost:4023
+CYBERSOAR_API_KEY=test_emulate_cybersoar_api_key
+```
+
+The default seed includes customers Acme Corp and Globex Industries under Nimbus MSP and Initech under Direct, each with deterministic generated alerts over the last months drawn from a catalog of realistic SOC rules (SentinelOne, Defender, Sophos, Microsoft 365, Active Directory, firewall), plus three fixed alerts with known ids (`a0000000-0000-4000-8000-00000000f101` closed TP with `MAIL_SENT`, `...f102` closed FP, `...f103` waiting for an analyst).
+
+### REST Routes
+
+Send `Authorization: ApiKey <key>` (Bearer and `X-API-Key` also work). Lists return `{ data, meta: { count, pageIndex, pageSize, nextPage? } }` where `nextPage` is present while more pages remain; errors return `{ statusCode, message, error }`.
+
+- `GET /incidents/alerts` - `name` (quoted or bare `MSP:Customer`, matching display names or slugs), `customer`, `service`, `verdict`, `status` (comma lists accepted), `ingestAt.gt|gte|lt|lte`, `createdAt.gt|lt`, `criticity`, `criticity.gte`, `tags`, `caseId`, `ruleId`, `search`, `pageIndex` (0-based), `pageSize` (max 100); sorted by `ingestAt` descending
+- `POST /incidents/alerts`, `GET|PATCH|DELETE /incidents/alerts/{id}`, `GET /incidents/alerts/stats`
+- `GET /incidents/cases`, `GET /incidents/cases/{caseId}` - cases grouped from alerts sharing a `caseId`
+- `GET /customers`, `GET /health`
+- `POST /_cybersoar/simulate/alert` (`customer`, `msp`, `service`, `ruleName`, `criticity`, `status`, `verdict`, `tags`, `count`), `POST /_cybersoar/simulate/close` (`id` or `caseId`, `verdict`, `notify` adds `MAIL_SENT`), `GET|DELETE /_cybersoar/events`
+- `GET /` - tabbed inspector for alerts, cases, customers, events, and auth
+
+Current CyberSOAR limits: analyst workflows (assignments, comments, playbooks), case creation endpoints, and authentication beyond API keys are not implemented.
+
+## Scaleway Transactional Email
+
+Stateful emulation of the Scaleway Transactional Email (TEM) API: sending with one `Email` object per recipient, listing and filtering, cancel, statistics, domains with DNS records and verification, webhooks with recorded events, blocklists, and project settings, plus stored message bodies, a simulator, an event log, and an inspector.
+
+Default local credentials:
+
+```text
+EMAIL_ENDPOINT=http://localhost:4024/transactional-email/v1alpha1/regions/fr-par
+EMAIL_SECRET_KEY=00000000-0000-4000-8000-00000000ca1e
+EMAIL_ACCESS_KEY=SCWEMULATE0000000000
+EMAIL_PROJECT_ID=00000000-0000-4000-8000-00000000c0fe
+EMAIL_DOMAIN=emulate.example
+```
+
+The default seed includes project `00000000-0000-4000-8000-00000000c0fe`, the checked domain `emulate.example` (id `00000000-0000-4000-8000-00000000d0ac`) and the unchecked `pending.example`, one webhook on the checked domain, one blocklisted recipient (`bounce@blocked.example`), and three historical emails. Seed `settings.strict_domains: true` to reject senders whose domain is not checked, and `settings.delivery_delay_ms` to control how fast emails reach `sent` (default 1500 ms, in two steps through `sending`).
+
+### REST Routes
+
+All routes live under `/transactional-email/v1alpha1/regions/{region}` (`fr-par`, `nl-ams`, `pl-waw`) and require the secret key in `X-Auth-Token`. Errors use Scaleway shapes: 401 `denied_authentication`, 400 `invalid_arguments` with a `details` array of `{ argument_name, help_message, reason }`, 403 `permissions_denied` for unknown or inaccessible projects, 404 `not_found` with `resource` and `resource_id`, and 412 `precondition_failed`.
+
+- `POST .../emails` - `from`, `to`, `cc`, `bcc` (`{ email, name }`), `subject`, `text` and/or `html`, `project_id`, `attachments` (`{ name, type, content }` base64, type allowlist, 2 MB total), `additional_headers`, `send_before`; returns `{ emails: [...] }` sharing one `message_id`
+- `GET .../emails` - `project_id`, `domain_id`, `message_id`, `since`, `until`, `mail_from`, `mail_rcpt` (or `mail_to`), `statuses`, `flags`, `subject`, `search`, `order_by` (`created_at_desc` default), `page`, `page_size` (max 100); returns `{ total_count, emails }`
+- `GET .../emails/{id}`, `POST .../emails/{id}/cancel` (412 once the email is sent, failed, or canceled), `GET .../statistics`
+- `POST|GET .../domains`, `GET|PATCH .../domains/{id}`, `POST .../domains/{id}/check`, `POST .../domains/{id}/revoke`, `GET .../domains/{id}/verification`
+- `POST|GET .../webhooks`, `GET|PATCH|DELETE .../webhooks/{id}`, `GET .../webhooks/{id}/events` (events are recorded, not pushed, since Scaleway delivers through SNS)
+- `GET|POST .../blocklists`, `DELETE .../blocklists/{id}`, `GET|PATCH .../project/{projectId}/settings`, `GET .../project-consumption`
+- `GET /_scaleway/emails`, `GET /_scaleway/emails/{id}` (full content with `text`, `html`, recipients, attachments), `GET /_scaleway/emails/{id}/html`, `GET /_scaleway/emails/{id}/text`, `DELETE /_scaleway/emails`
+- `POST /_scaleway/simulate/deliver|bounce|spam|defer|fail` (`email_id`, `message_id`, or `mail_rcpt`; bounce takes `soft: true` for a mailbox-full soft bounce), `GET|DELETE /_scaleway/events`
+- `GET /` - tabbed inspector for emails (with HTML preview links), domains, webhooks, blocklists, events, and auth
+
+Current Scaleway limits: SMTP relay, DKIM signing of actual messages, SNS delivery of webhooks, offers and pools, and the Scaleway IAM API are not implemented.
+
 ## Apple Sign In
 
 Sign in with Apple emulation with authorization code flow, PKCE support, RS256 ID tokens, and OIDC discovery.
@@ -1262,6 +1655,17 @@ packages/
     slack/          # Slack Web API, OAuth v2, incoming webhooks
     linear/         # Linear GraphQL API, OAuth, webhooks
     twilio/         # Twilio Messaging, Verify, Voice, webhooks
+    chargebee/      # Chargebee billing API, hosted pages, webhooks
+    zendesk/        # Zendesk Support API, triggers, webhooks
+    mailgun/        # Mailgun messages, lists, events, webhooks
+    document360/    # Document360 knowledge base, readers, teams, drive
+    defender/       # Microsoft Defender for Endpoint machines, alerts, TVM, hunting
+    pennylane/      # Pennylane invoices, appendices, contacts, banking, accounting
+    sentinelone/    # SentinelOne accounts, sites, agents, threats, users, exclusions
+    graph/          # Microsoft Graph users, invitations, role assignments, $batch
+    elastic/        # Kibana Fleet API + Elasticsearch search, indexing, aggregations
+    cybersoar/      # CyberSOAR incident alerts, cases, simulator
+    scaleway/       # Scaleway Transactional Email: send, list, domains, webhooks
     apple/          # Apple Sign In / OIDC
     microsoft/      # Microsoft Entra ID OAuth 2.0 / OIDC + Graph /me
     aws/            # AWS S3, SQS, IAM, STS
@@ -1287,7 +1691,29 @@ Tokens are configured in the seed config and map to users. Pass them as `Authori
 
 **Twilio**: HTTP Basic auth accepts the seeded Account SID/Auth Token pair or API Key/API Secret pair. Product-host APIs are exposed under local prefixes such as `/messaging/v1` and `/verify/v2`; the 2010 API lives at `/2010-04-01`.
 
+**Chargebee**: HTTP Basic auth with a seeded API key as the username and an empty password. All API routes live under `/api/v2`; the hosted checkout lives at `/pages/v3/{id}/` and the customer portal at `/portal/v2/authenticate`.
+
+**Zendesk**: HTTP Basic auth with `email/token:API_TOKEN` (seeded API tokens), `email:password` for seeded passwords, or `Bearer` OAuth tokens. `X-On-Behalf-Of` acts as an end user. All routes live under `/api/v2` with an optional `.json` suffix.
+
+**Mailgun**: HTTP Basic auth with any username and a seeded API key as the password. Domain sending keys are limited to their domain. Message routes live under `/v3/{domain}` and management routes under `/v3`, `/v4`, and `/v5` like the real API.
+
+**Document360**: the `api_token` header with a seeded token (`x-api-token` and `Authorization: Bearer` also work). Routes live under `/v2` and `/v1`.
+
+**Defender for Endpoint**: Entra client_credentials at `/{tenantId}/oauth2/v2.0/token` with a seeded app, then `Authorization: Bearer` on `/api/...`. Each token only sees the tenant it was issued for.
+
+**Pennylane**: `Authorization: Bearer` with a seeded API key. Routes live under `/api/external/v2` (also `/v2` and the bare path).
+
+**SentinelOne**: `Authorization: ApiToken` with a seeded token (`Bearer` also works). Routes live under `/web/api/v2.1` and `/web/api/v2.0`. `POST /users/generate-api-token` mints a user bound token.
+
+**Microsoft Graph**: Entra client_credentials at `/{tenantId}/oauth2/v2.0/token` with a seeded app, then `Authorization: Bearer` on `/v1.0/...`. Tokens only see their tenant, and app `permissions` gate each route.
+
 **Apple**: OIDC authorization code flow with RS256 ID tokens. On first auth per user/client pair, a `user` JSON blob is included.
+
+**Elastic**: `Authorization: ApiKey <key>` on `/api/fleet/...` (plus `kbn-xsrf` on writes) and on Elasticsearch routes at the root. The raw seeded key, the base64 `id:key` form the official client sends, and `Basic name:key` all authenticate.
+
+**CyberSOAR**: `Authorization: ApiKey <key>` (Bearer and `X-API-Key` accepted) with the seeded `test_emulate_cybersoar_api_key`.
+
+**Scaleway**: the secret key in `X-Auth-Token`; API keys can be scoped to `project_ids`, and other projects return 403 `permissions_denied`.
 
 **Microsoft**: OIDC authorization code flow with PKCE support. Also supports client credentials grants. Microsoft Graph `/v1.0/me` available.
 

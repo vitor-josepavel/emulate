@@ -40,6 +40,17 @@ const SERVICE_NAME_LIST = [
   "clerk",
   "linear",
   "twilio",
+  "chargebee",
+  "zendesk",
+  "mailgun",
+  "document360",
+  "defender",
+  "pennylane",
+  "sentinelone",
+  "graph",
+  "elastic",
+  "cybersoar",
+  "scaleway",
 ] as const;
 export type ServiceName = (typeof SERVICE_NAME_LIST)[number];
 export const SERVICE_NAMES: readonly ServiceName[] = SERVICE_NAME_LIST;
@@ -626,6 +637,547 @@ export const SERVICE_REGISTRY: Record<ServiceName, ServiceEntry> = {
         conversations: {
           services: [{ friendly_name: "Local Conversations" }],
         },
+      },
+    },
+  },
+
+  chargebee: {
+    label: "Chargebee billing emulator",
+    endpoints:
+      "customers, hierarchy, items, item prices, coupons, subscriptions, invoices, credit notes, transactions, payment sources, hosted pages, portal sessions, estimates, events, time machine, webhooks, inspector",
+    async load() {
+      const mod = await import("@emulators/chargebee");
+      return { plugin: mod.chargebeePlugin, seedFromConfig: mod.seedFromConfig };
+    },
+    defaultFallback(cfg) {
+      const keys = cfg?.api_keys as Array<{ key?: string }> | undefined;
+      return { login: keys?.[0]?.key ?? "test_emulate_chargebee_api_key", id: 1, scopes: [] };
+    },
+    initConfig: {
+      chargebee: {
+        site: "emulate-test",
+        api_keys: [{ key: "test_emulate_chargebee_api_key", name: "Local API Key" }],
+        item_families: [{ id: "local-products", name: "Local Products" }],
+        items: [
+          { id: "pro-plan", name: "Pro Plan", type: "plan", item_family: "local-products" },
+          { id: "extra-seats", name: "Extra Seats", type: "addon", item_family: "local-products" },
+          { id: "setup-fee", name: "Setup Fee", type: "charge", item_family: "local-products" },
+        ],
+        item_prices: [
+          {
+            id: "pro-plan-USD-Monthly",
+            item: "pro-plan",
+            pricing_model: "flat_fee",
+            price: 2000,
+            currency_code: "USD",
+            period: 1,
+            period_unit: "month",
+          },
+          {
+            id: "extra-seats-USD-Monthly",
+            item: "extra-seats",
+            pricing_model: "per_unit",
+            price: 500,
+            currency_code: "USD",
+            period: 1,
+            period_unit: "month",
+          },
+          { id: "setup-fee-USD", item: "setup-fee", pricing_model: "flat_fee", price: 4900, currency_code: "USD" },
+        ],
+        coupons: [
+          {
+            id: "WELCOME10",
+            name: "Welcome 10%",
+            discount_type: "percentage",
+            discount_percentage: 10,
+            duration_type: "one_time",
+          },
+        ],
+        customers: [
+          {
+            id: "local-customer",
+            first_name: "Test",
+            last_name: "Customer",
+            email: "test@example.com",
+            company: "Example Inc",
+            card: { number: "4111111111111111" },
+          },
+        ],
+        subscriptions: [
+          {
+            id: "local-subscription",
+            customer: "local-customer",
+            items: [{ item_price: "pro-plan-USD-Monthly" }],
+          },
+        ],
+        webhooks: [
+          {
+            url: "http://localhost:3000/api/webhooks/chargebee",
+            username: "chargebee",
+            password: "webhook_secret",
+          },
+        ],
+      },
+    },
+  },
+
+  zendesk: {
+    label: "Zendesk Support API emulator",
+    endpoints:
+      "tickets, comments, audits, metrics, requests, users, organizations, memberships, groups, ticket fields, custom fields, tags, search, views, macros, triggers, webhooks, uploads, job statuses, incremental exports, inspector",
+    async load() {
+      const mod = await import("@emulators/zendesk");
+      return { plugin: mod.zendeskPlugin, seedFromConfig: mod.seedFromConfig };
+    },
+    defaultFallback(cfg) {
+      const tokens = cfg?.api_tokens as Array<{ email?: string }> | undefined;
+      return { login: tokens?.[0]?.email ?? "admin@example.com", id: 1, scopes: [] };
+    },
+    initConfig: {
+      zendesk: {
+        subdomain: "emulate-support",
+        api_tokens: [{ token: "test_emulate_zendesk_api_token", email: "admin@example.com" }],
+        groups: [{ name: "Support", default: true }],
+        organizations: [{ name: "Example Inc", domain_names: ["example.com"], organization_fields: { english: true } }],
+        users: [
+          { name: "Support Admin", email: "admin@example.com", role: "admin" },
+          { name: "Alex Agent", email: "agent@example.com", role: "agent" },
+          { name: "Test Customer", email: "test@example.com", role: "end-user", organization: "Example Inc" },
+        ],
+        ticket_fields: [
+          { type: "text", title: "Case reference" },
+          {
+            type: "tagger",
+            title: "Category",
+            options: [
+              { name: "Billing", value: "category_billing" },
+              { name: "Technical", value: "category_technical" },
+            ],
+          },
+        ],
+        organization_fields: [
+          { key: "english", title: "English", type: "checkbox" },
+          { key: "client_id", title: "Client ID", type: "text" },
+        ],
+        tickets: [
+          {
+            subject: "Welcome to the Zendesk emulator",
+            description: "How do I test my support integration locally?",
+            requester: "test@example.com",
+            assignee: "agent@example.com",
+            status: "open",
+            priority: "normal",
+            tags: ["welcome"],
+          },
+        ],
+        webhooks: [
+          {
+            name: "Local ticket notifier",
+            endpoint: "http://localhost:3000/api/webhooks/zendesk",
+            subscriptions: ["conditional_ticket_events", "zen:event-type:user.created"],
+            signing_secret: "zendesk_webhook_secret",
+          },
+        ],
+        triggers: [
+          {
+            title: "Notify app on new tickets",
+            conditions: { all: [{ field: "update_type", operator: "is", value: "Create" }], any: [] },
+            actions: [
+              {
+                field: "notification_webhook",
+                value: [
+                  "Local ticket notifier",
+                  '{"ticket_id": {{ticket.id}}, "subject": "{{ticket.title}}", "requester": "{{ticket.requester.email}}"}',
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    },
+  },
+
+  mailgun: {
+    label: "Mailgun email API emulator",
+    endpoints:
+      "messages, stored messages, events, logs, domains, mailing lists, members, suppressions, templates, tags, stats, webhooks, address validation, inbound routes, simulator, inspector",
+    async load() {
+      const mod = await import("@emulators/mailgun");
+      return { plugin: mod.mailgunPlugin, seedFromConfig: mod.seedFromConfig };
+    },
+    defaultFallback(cfg) {
+      const keys = cfg?.api_keys as Array<{ key?: string }> | undefined;
+      return { login: keys?.[0]?.key ?? "key-emulate-mailgun-test", id: 1, scopes: [] };
+    },
+    initConfig: {
+      mailgun: {
+        api_keys: [{ key: "key-emulate-mailgun-test" }],
+        webhook_signing_key: "emulate-mailgun-webhook-key",
+        domains: [
+          { name: "mail.example.com", tracking: { open: true, click: true } },
+          {
+            name: "sandbox0000000000000000000000000000.mailgun.org",
+            type: "sandbox",
+            authorized_recipients: ["test@example.com"],
+          },
+        ],
+        lists: [
+          {
+            address: "team@mail.example.com",
+            name: "Team",
+            access_level: "everyone",
+            members: [
+              { address: "alice@example.com", name: "Alice" },
+              { address: "bob@example.com", name: "Bob" },
+            ],
+          },
+        ],
+        templates: [
+          {
+            domain: "mail.example.com",
+            name: "welcome",
+            template: "<p>Hello {{name}}, welcome to {{company}}.</p>",
+            subject: "Welcome to {{company}}",
+          },
+        ],
+        webhooks: [
+          {
+            domain: "mail.example.com",
+            types: ["delivered", "permanent_fail"],
+            url: "http://localhost:3000/api/webhooks/mailgun",
+          },
+        ],
+        routes: [
+          {
+            priority: 0,
+            description: "Forward inbound support mail to the app",
+            expression: 'match_recipient("support@mail.example.com")',
+            actions: ['forward("http://localhost:3000/api/webhooks/mailgun/inbound")', "stop()"],
+          },
+        ],
+      },
+    },
+  },
+
+  document360: {
+    label: "Document360 knowledge base API emulator",
+    endpoints:
+      "project versions, languages, categories, articles with versions and publishing, search, readers, reader groups, team accounts, team groups, drive folders and files, events, inspector",
+    async load() {
+      const mod = await import("@emulators/document360");
+      return { plugin: mod.document360Plugin, seedFromConfig: mod.seedFromConfig };
+    },
+    defaultFallback(cfg) {
+      const tokens = cfg?.api_tokens as Array<{ token?: string }> | undefined;
+      return { login: tokens?.[0]?.token ?? "test_emulate_document360_token", id: 1, scopes: [] };
+    },
+    initConfig: {
+      document360: {
+        project_name: "Emulate Knowledge Base",
+        api_tokens: [{ token: "test_emulate_document360_token" }],
+        team_accounts: [{ email: "admin@example.com", first_name: "Admin", last_name: "User", portal_role: "owner" }],
+        project_versions: [
+          {
+            version_number: 1,
+            version_code_name: "v1",
+            is_main_version: true,
+            languages: [{ code: "en", is_default: true }, "fr"],
+            categories: [
+              {
+                name: "Getting Started",
+                articles: [
+                  { title: "Welcome", content: "# Welcome\n\nHello from the Document360 emulator.", published: true },
+                ],
+              },
+            ],
+          },
+        ],
+        reader_groups: [{ title: "Customers" }, { title: "MSP" }, { title: "Distributors" }],
+        readers: [{ email: "test@example.com", first_name: "Test", last_name: "Reader", groups: ["Customers"] }],
+      },
+    },
+  },
+
+  defender: {
+    label: "Microsoft Defender for Endpoint API emulator",
+    endpoints:
+      "client_credentials tokens, machines with OData queries, machine actions, alerts, vulnerabilities, software, recommendations, indicators, advanced hunting, entities, simulator, inspector",
+    async load() {
+      const mod = await import("@emulators/defender");
+      return { plugin: mod.defenderPlugin, seedFromConfig: mod.seedFromConfig };
+    },
+    defaultFallback(cfg) {
+      const apps = cfg?.apps as Array<{ client_id?: string }> | undefined;
+      return { login: apps?.[0]?.client_id ?? "00000000-0000-4000-8000-00000000c1e0", id: 1, scopes: [] };
+    },
+    initConfig: {
+      defender: {
+        apps: [
+          { client_id: "00000000-0000-4000-8000-00000000c1e0", client_secret: "test_emulate_defender_client_secret" },
+        ],
+        tenants: [
+          {
+            id: "00000000-0000-4000-8000-0000000000de",
+            name: "Contoso",
+            machines: [
+              {
+                computerDnsName: "desktop-01.contoso.local",
+                osPlatform: "Windows11",
+                version: "23H2",
+                osBuild: 22631,
+                machineTags: ["laptop"],
+              },
+              {
+                computerDnsName: "srv-files-01.contoso.local",
+                osPlatform: "WindowsServer2022",
+                version: "21H2",
+                osBuild: 20348,
+                rbacGroupName: "Servers",
+              },
+              {
+                computerDnsName: "old-kiosk-07.contoso.local",
+                osPlatform: "Windows10",
+                version: "21H2",
+                osBuild: 19044,
+                onboardingStatus: "CanBeOnboarded",
+                healthStatus: "Inactive",
+              },
+            ],
+            alerts: [
+              {
+                machine: "srv-files-01.contoso.local",
+                title: "Suspicious PowerShell command line",
+                severity: "High",
+                category: "Execution",
+              },
+            ],
+          },
+        ],
+      },
+    },
+  },
+
+  pennylane: {
+    label: "Pennylane accounting API emulator",
+    endpoints:
+      "customers, suppliers, products, categories, customer invoices with appendices, supplier invoices, transactions, bank accounts, journals, ledger accounts, ledger entries, fiscal years, Chargebee sync simulator, inspector",
+    async load() {
+      const mod = await import("@emulators/pennylane");
+      return { plugin: mod.pennylanePlugin, seedFromConfig: mod.seedFromConfig };
+    },
+    defaultFallback(cfg) {
+      const keys = cfg?.api_keys as Array<{ key?: string }> | undefined;
+      return { login: keys?.[0]?.key ?? "test_emulate_pennylane_api_key", id: 1, scopes: [] };
+    },
+    initConfig: {
+      pennylane: {
+        api_keys: [{ key: "test_emulate_pennylane_api_key" }],
+        company: { name: "Emulate SAS", invoice_number_prefix: "F-" },
+        customers: [{ name: "Acme SAS", emails: ["billing@acme.example"], external_reference: "cb_acme" }],
+        products: [{ label: "Managed EDR - per endpoint", price_before_tax: 8, vat_rate: "FR_200", unit: "endpoint" }],
+        customer_invoices: [
+          {
+            customer: "Acme SAS",
+            invoice_number: "F-2026-0001",
+            date: "2026-01-15",
+            paid: true,
+            lines: [{ label: "Managed EDR - per endpoint", quantity: 25, product: "Managed EDR - per endpoint" }],
+          },
+          {
+            customer: "Acme SAS",
+            invoice_number: "INV-000123",
+            external_reference: "INV-000123",
+            imported: true,
+            amount: 1200,
+          },
+        ],
+      },
+    },
+  },
+
+  sentinelone: {
+    label: "SentinelOne management console API emulator",
+    endpoints:
+      "accounts, sites, groups, filters, agents and actions, users, RBAC roles, threats, application risks and CVEs, exclusions, blocklist, device control, activities, simulator, inspector",
+    async load() {
+      const mod = await import("@emulators/sentinelone");
+      return { plugin: mod.sentinelonePlugin, seedFromConfig: mod.seedFromConfig };
+    },
+    defaultFallback(cfg) {
+      const tokens = cfg?.api_tokens as Array<{ token?: string }> | undefined;
+      return { login: tokens?.[0]?.token ?? "test_emulate_sentinelone_api_token", id: 1, scopes: [] };
+    },
+    initConfig: {
+      sentinelone: {
+        api_tokens: [{ token: "test_emulate_sentinelone_api_token" }],
+        accounts: [
+          {
+            name: "EMULATE MSSP",
+            usageType: "mssp",
+            sites: [
+              {
+                name: "ACME CORP",
+                siteType: "Paid",
+                externalId: "11111111-1111-4111-8111-111111111111",
+                filters: [
+                  { name: "Windows-Workstations", machineTypes: ["desktop", "laptop"], osTypes: ["windows"] },
+                  { name: "Windows-Servers", machineTypes: ["server"], osTypes: ["windows"] },
+                ],
+                groups: [
+                  { name: "Windows-Workstations", filter: "Windows-Workstations" },
+                  { name: "Windows-Servers", filter: "Windows-Servers" },
+                ],
+                agents: [
+                  { computerName: "ACME-WS-001", osType: "windows", machineType: "laptop" },
+                  {
+                    computerName: "ACME-SRV-FILES",
+                    osType: "windows",
+                    osName: "Windows Server 2022 Standard",
+                    machineType: "server",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        users: [{ email: "admin@example.com", fullName: "Admin User", scope: "tenant" }],
+      },
+    },
+  },
+
+  graph: {
+    label: "Microsoft Graph API emulator",
+    endpoints:
+      "client_credentials tokens per tenant, users with OData filters, invitations, directory role assignments and definitions, groups, organization, $batch, simulator, inspector",
+    async load() {
+      const mod = await import("@emulators/graph");
+      return { plugin: mod.graphPlugin, seedFromConfig: mod.seedFromConfig };
+    },
+    defaultFallback(cfg) {
+      const apps = cfg?.apps as Array<{ client_id?: string }> | undefined;
+      return { login: apps?.[0]?.client_id ?? "00000000-0000-4000-8000-0000000000a9", id: 1, scopes: [] };
+    },
+    initConfig: {
+      graph: {
+        apps: [
+          { client_id: "00000000-0000-4000-8000-0000000000a9", client_secret: "test_emulate_graph_client_secret" },
+        ],
+        tenants: [
+          {
+            id: "00000000-0000-4000-8000-00000000c0de",
+            displayName: "Contoso",
+            domain: "contoso.onmicrosoft.com",
+            users: [
+              {
+                displayName: "Adele Vance",
+                userPrincipalName: "adele.vance@contoso.example",
+                mail: "adele.vance@contoso.example",
+                roles: ["Global Administrator"],
+              },
+              {
+                displayName: "Nora Analyst",
+                mail: "nora.analyst@soc.example",
+                userType: "Guest",
+                roles: ["Security Administrator"],
+              },
+            ],
+          },
+        ],
+      },
+    },
+  },
+  elastic: {
+    label: "Elastic Fleet and Elasticsearch emulator",
+    endpoints:
+      "Kibana Fleet agent policies, package policies, agents, enrollment keys, fleet server hosts; Elasticsearch search with bool queries and aggregations, index, bulk, count; simulator, inspector",
+    async load() {
+      const mod = await import("@emulators/elastic");
+      return { plugin: mod.elasticPlugin, seedFromConfig: mod.seedFromConfig };
+    },
+    defaultFallback(cfg) {
+      const keys = cfg?.api_keys as Array<{ api_key?: string }> | undefined;
+      return { login: keys?.[0]?.api_key ?? "test_emulate_elastic_api_key", id: 1, scopes: [] };
+    },
+    initConfig: {
+      elastic: {
+        api_keys: [{ id: "emulate-elastic-key", api_key: "test_emulate_elastic_api_key", name: "emulate" }],
+        agent_policies: [
+          {
+            id: "00000000-0000-4000-8000-00000000e001",
+            name: "Cyna SOC collectors 1",
+            enrollment_token: "emulate-enrollment-token-pool-1",
+            package_policies: [{ name: "O365_ACME-CORP", package: "o365", version: "3.8.1" }],
+            agents: [{ hostname: "soc-collector-01", os: "linux" }],
+          },
+        ],
+        indices: [
+          {
+            name: "services-monitoring",
+            documents: [
+              {
+                "@timestamp": "2026-09-01T08:00:00.000Z",
+                integration_id: "00000000-0000-4000-8000-00000000f001",
+                service: "o365",
+                status: "operational",
+                namespace: "nimbus-msp__acme-corp",
+              },
+            ],
+          },
+        ],
+      },
+    },
+  },
+  cybersoar: {
+    label: "CyberSOAR incident API emulator",
+    endpoints:
+      "incident alerts with namespace, service, verdict, status, and ingest window filters, paging, cases, stats, customers, simulator, inspector",
+    async load() {
+      const mod = await import("@emulators/cybersoar");
+      return { plugin: mod.cybersoarPlugin, seedFromConfig: mod.seedFromConfig };
+    },
+    defaultFallback(cfg) {
+      const keys = cfg?.api_keys as Array<{ api_key?: string }> | undefined;
+      return { login: keys?.[0]?.api_key ?? "test_emulate_cybersoar_api_key", id: 1, scopes: [] };
+    },
+    initConfig: {
+      cybersoar: {
+        api_keys: [{ api_key: "test_emulate_cybersoar_api_key", name: "emulate" }],
+        customers: [{ name: "Acme Corp", msp: "Nimbus MSP", generate_alerts: 40, generate_days: 90 }],
+        alerts: [
+          {
+            customer: "Acme Corp",
+            msp: "Nimbus MSP",
+            service: "MS365",
+            ruleName: "Inbox forwarding rule created",
+            criticity: 3,
+            status: "CLOSED",
+            verdict: "TP",
+            tags: ["MAIL_SENT"],
+          },
+        ],
+      },
+    },
+  },
+  scaleway: {
+    label: "Scaleway Transactional Email emulator",
+    endpoints:
+      "emails (send, list, get, cancel, statistics), domains, webhooks and events, blocklists, project settings, simulator, inspector",
+    async load() {
+      const mod = await import("@emulators/scaleway");
+      return { plugin: mod.scalewayPlugin, seedFromConfig: mod.seedFromConfig };
+    },
+    defaultFallback(cfg) {
+      const keys = cfg?.api_keys as Array<{ secret_key?: string }> | undefined;
+      return { login: keys?.[0]?.secret_key ?? "00000000-0000-4000-8000-00000000ca1e", id: 1, scopes: [] };
+    },
+    initConfig: {
+      scaleway: {
+        projects: [{ id: "00000000-0000-4000-8000-00000000c0fe", name: "default" }],
+        api_keys: [
+          { secret_key: "00000000-0000-4000-8000-00000000ca1e", access_key: "SCWEMULATE0000000000", name: "emulate" },
+        ],
+        domains: [{ name: "emulate.example", status: "checked" }],
+        settings: { delivery_delay_ms: 1500, strict_domains: false },
       },
     },
   },

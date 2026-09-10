@@ -31,6 +31,50 @@ Linear API coverage:
 Vercel API coverage:
   GET /v7/deployments lists deployments by commit SHA across a team's projects, with cursor pagination.
 
+Chargebee API coverage:
+  Product Catalog 2.0 billing at /api/v2 with subscriptions, invoices, hosted pages, and the delorean time machine.
+  Webhooks configured with a username and password send Chargebee-style Basic auth.
+
+Zendesk API coverage:
+  Support API v2 at /api/v2 with tickets, users, organizations, search, triggers, and views.
+  Webhooks are signed with X-Zendesk-Webhook-Signature over the timestamp and raw body.
+
+Mailgun API coverage:
+  Messages at /v3/{domain}/messages with stored copies, events, mailing lists, suppressions, templates, and routes.
+  Webhooks and inbound routes carry Mailgun timestamp, token, and HMAC-SHA256 signature fields.
+
+Document360 API coverage:
+  Knowledge base API at /v2 (and /v1) with project versions, categories, versioned articles, search, readers, teams, and drive.
+  Authenticate with the api_token header; every response uses the Document360 result and errors envelope.
+
+Defender for Endpoint API coverage:
+  Tokens at /{tenantId}/oauth2/v2.0/token (client_credentials) and the WDATP API at /api with OData $filter, $top, $skip, $orderby, $select, and $count.
+  Machines, machine actions, alerts, vulnerabilities, software, recommendations, indicators, and a KQL subset for advanced hunting, scoped per tenant.
+
+Pennylane API coverage:
+  External API v2 at /api/external/v2 with customers, suppliers, products, categories, customer and supplier invoices, appendices, transactions, and accounting.
+  Lists return { items, has_more, next_cursor } with the JSON filter parameter; appendices accept PDF, XLSX, and image uploads.
+
+SentinelOne API coverage:
+  Management console API at /web/api/v2.1 with accounts, sites, groups, filters, agents, users, RBAC roles, threats, application risks, exclusions, and device control.
+  Authenticate with the ApiToken header; lists return { data, pagination: { nextCursor, totalItems } } with cursor, skip, limit, and countOnly.
+
+Microsoft Graph API coverage:
+  Tokens at /{tenantId}/oauth2/v2.0/token (client_credentials) and Graph at /v1.0 and /beta with users, invitations, role assignments, groups, and $batch.
+  OData $filter, $select, $top, $count, $search, and $skiptoken paging; apps seeded with a permissions list get Authorization_RequestDenied outside it.
+
+Elastic Fleet and Elasticsearch coverage:
+  Kibana Fleet at /api/fleet with agent policies (sys_monitoring), package policies (409 on duplicate names), agents, enrollment keys, fleet server hosts, and available versions.
+  Elasticsearch at the root with the product check, _search (bool term/terms/range/wildcard/exists, sort, terms/cardinality/missing aggregations), _doc, _bulk, _count, and _cat/indices.
+
+CyberSOAR API coverage:
+  GET /incidents/alerts with name="MSP:Customer", service, verdict, status, ingestAt.gt/lt, tags, pageIndex, and pageSize returning { data, meta: { count, nextPage } }.
+  Alert CRUD, cases, stats, customers, ApiKey authentication, and a simulator that creates or closes alerts with the MAIL_SENT tag.
+
+Scaleway Transactional Email coverage:
+  POST /transactional-email/v1alpha1/regions/{region}/emails with X-Auth-Token, one Email per recipient, list/get/cancel/statistics, domains, webhooks, blocklists, project settings.
+  Emails move new -> sending -> sent on a timer; simulators produce bounces, spam, deferrals; stored bodies are served at /_scaleway/emails/{id}.
+
 Webhook signatures:
   Stripe webhook secrets produce a Stripe-Signature header for raw-body verification.
 `,
