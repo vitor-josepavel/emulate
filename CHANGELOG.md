@@ -1,6 +1,30 @@
 # Changelog
 
 <!-- release:start -->
+## 0.12.0
+
+### New Features
+
+- **Chargebee emulator** adds Product Catalog 2.0 billing on port 4014 with subscriptions, invoices, credit notes, estimates, hosted pages, portal sessions, the delorean time machine, and Basic-auth webhooks (#1)
+- **Zendesk emulator** adds Support API coverage on port 4015 with tickets, audits, views, macros, triggers, incremental exports, and uploads (#1)
+- **Mailgun emulator** adds email API coverage on port 4016 with messages, events, mailing lists, suppressions, templates, address validation, and inbound routes (#1)
+- **Document360 emulator** adds knowledge base coverage on port 4017 with project versions, categories, articles with versioning and publishing, readers, and drive files (#1)
+- **Defender for Endpoint emulator** adds security API coverage on port 4018 with machines and OData queries, machine actions, alerts, vulnerabilities, indicators, and advanced hunting (#1)
+- **Pennylane emulator** adds accounting API coverage on port 4019 with customer and supplier invoices, transactions, journals, ledger entries, and fiscal years (#1)
+- **SentinelOne emulator** adds management console coverage on port 4020 with agents and actions, threats, application risks and CVEs, exclusions, blocklist, and device control (#1)
+- **Microsoft Graph emulator** adds tenant-scoped coverage on port 4021 with users and OData filters, invitations, directory roles, groups, and `$batch` (#1)
+- **Elastic emulator** adds Kibana Fleet and Elasticsearch coverage on port 4022 with agent policies, package policies, enrollment keys, and search with bool queries and aggregations (#1)
+- **CyberSOAR emulator** adds incident API coverage on port 4023 with alert filtering by namespace, service, verdict, status, and ingest window, plus cases and stats (#1)
+- **Scaleway Transactional Email emulator** adds coverage on port 4024 with email send, list, get and cancel, statistics, domains, webhooks, and blocklists (#1)
+
+### Improvements
+
+- **Pennylane appendices** accept XLSX invoice attachments by default, matching the upstream API (#1)
+- **Docs navigation** lists every emulator in the sidebar and mobile nav (#1)
+- **Configuration example** carries a starter section for all 25 registry services (#1)
+
+<!-- release:end -->
+
 ## 0.11.2
 
 ### New Features
@@ -23,7 +47,6 @@
 - Fixed **AWS S3** uploads, copies, and downloads to preserve arbitrary binary payloads (#241, #245)
 - Fixed **Microsoft refresh tokens** to remain bound to the OAuth client that issued them (#243)
 
-<!-- release:end -->
 
 ## 0.11.1
 
