@@ -1,6 +1,15 @@
 # Changelog
 
 <!-- release:start -->
+## 0.13.1
+
+### Improvements
+
+- **Rate limits per namespace**: the fake 5000-requests-per-hour quota is counted per namespace, so many test runs can share one API key
+- **Chargebee `plan_rule` seed option**: `at_least_one` accepts subscriptions carrying several plan item prices for loosely modelled catalogs; the default stays Chargebee's exactly-one rule
+
+<!-- release:end -->
+
 ## 0.13.0
 
 ### New Features
@@ -12,8 +21,6 @@
 ### Improvements
 
 - **Release workflow** builds the self-contained `emulate` tarball and attaches it to the GitHub release instead of publishing to npm
-
-<!-- release:end -->
 
 ## 0.12.0
 

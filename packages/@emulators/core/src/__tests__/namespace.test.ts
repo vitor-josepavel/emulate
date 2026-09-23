@@ -170,3 +170,27 @@ describe("namespaces", () => {
     });
   });
 });
+
+describe("namespaced rate limits", () => {
+  it("counts requests per namespace", async () => {
+    const plugin: ServicePlugin = {
+      name: "ping",
+      register(app) {
+        app.get("/ping", (c) => c.json({ ok: true }));
+      },
+    };
+    const { app } = createServer(plugin);
+    const remaining = async (namespace?: string) => {
+      const response = await app.request("/ping", {
+        headers: { Authorization: "Bearer t", ...(namespace ? { [NAMESPACE_HEADER]: namespace } : {}) },
+      });
+      return Number(response.headers.get("X-RateLimit-Remaining"));
+    };
+
+    await remaining("a");
+    await remaining("a");
+    expect(await remaining("a")).toBe(4997);
+    expect(await remaining("b")).toBe(4999);
+    expect(await remaining()).toBe(4999);
+  });
+});

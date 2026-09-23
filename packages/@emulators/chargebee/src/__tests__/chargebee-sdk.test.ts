@@ -191,3 +191,42 @@ describe("Chargebee Node SDK: platform billing fields", () => {
     ).rejects.toMatchObject({ api_error_code: "param_wrong_value", param: "discounts[item_price_id][0]" });
   });
 });
+
+describe("Chargebee Node SDK: plan rule", () => {
+  it("rejects two plans by default and accepts them with plan_rule at_least_one", async () => {
+    const items = [{ item_price_id: DEFAULT_PLAN_MONTHLY_PRICE_ID }, { item_price_id: "second-plan-USD-Monthly" }];
+    type ImportInput = Parameters<Chargebee["subscription"]["importForItems"]>[1];
+    const secondPlan = {
+      items: [{ id: "second-plan", name: "Second Plan", type: "plan" as const, item_family: "local-products" }],
+      item_prices: [
+        {
+          id: "second-plan-USD-Monthly",
+          item: "second-plan",
+          pricing_model: "flat_fee" as const,
+          price: 1000,
+          currency_code: "USD",
+          period: 1,
+          period_unit: "month" as const,
+        },
+      ],
+    };
+
+    const strict = createClient(createChargebeeTestApp(secondPlan));
+    await expect(
+      strict.subscription.importForItems(DEFAULT_CUSTOMER_ID, { subscription_items: items } as ImportInput),
+    ).rejects.toMatchObject({ api_error_code: "param_wrong_value" });
+
+    const relaxed = createClient(createChargebeeTestApp({ ...secondPlan, plan_rule: "at_least_one" }));
+    const imported = await relaxed.subscription.importForItems(DEFAULT_CUSTOMER_ID, {
+      subscription_items: items,
+    } as ImportInput);
+    expect(imported.subscription.subscription_items?.map((item) => item.item_price_id)).toEqual(
+      items.map((item) => item.item_price_id),
+    );
+    await expect(
+      relaxed.subscription.importForItems(DEFAULT_CUSTOMER_ID, {
+        subscription_items: [{ item_price_id: DEFAULT_ADDON_PRICE_ID, quantity: 1 }],
+      } as ImportInput),
+    ).rejects.toMatchObject({ api_error_code: "param_wrong_value" });
+  });
+});

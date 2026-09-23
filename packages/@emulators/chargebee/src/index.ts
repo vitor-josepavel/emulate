@@ -49,7 +49,9 @@ import {
   getChargebeeStore,
   nowSeconds,
   resourceVersion,
+  setPlanRule,
   setSiteName,
+  type PlanRule,
   type ChargebeeStore,
 } from "./store.js";
 
@@ -64,6 +66,8 @@ export interface ChargebeeSeedConfig {
   port?: number;
   baseUrl?: string;
   site?: string;
+  /** Chargebee accepts exactly one plan per subscription. "at_least_one" relaxes this for loosely modelled catalogs. */
+  plan_rule?: PlanRule;
   api_keys?: Array<{ key: string; name?: string }>;
   item_families?: Array<{ id?: string; name: string; description?: string }>;
   items?: Array<
@@ -366,6 +370,7 @@ export function seedFromConfig(
   const cs = getChargebeeStore(store);
   genesisTime(cs);
   if (config.site) setSiteName(cs, config.site);
+  if (config.plan_rule) setPlanRule(cs, config.plan_rule);
 
   for (const key of config.api_keys ?? []) {
     if (!key.key || cs.apiKeys.findOneBy("key", key.key)) continue;

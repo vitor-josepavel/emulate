@@ -11,7 +11,7 @@ import {
 } from "./middleware/auth.js";
 import type { ServicePlugin } from "./plugin.js";
 import { registerFontRoutes } from "./fonts.js";
-import { namespaceMiddleware } from "./namespace.js";
+import { currentNamespace, namespaceMiddleware } from "./namespace.js";
 
 export interface ServerOptions {
   port?: number;
@@ -55,7 +55,8 @@ export function createServer(plugin: ServicePlugin, options: ServerOptions = {})
   let lastPruneAt = Math.floor(Date.now() / 1000);
 
   app.use("*", async (c, next) => {
-    const token = c.get("authToken") ?? "__anonymous__";
+    // Namespaces are independent tenants, so each one gets its own quota.
+    const token = `${currentNamespace()}\u0000${c.get("authToken") ?? "__anonymous__"}`;
     const now = Math.floor(Date.now() / 1000);
 
     if (now - lastPruneAt > 3600) {
