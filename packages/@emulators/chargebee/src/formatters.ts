@@ -180,6 +180,7 @@ export function formatItemPrice(p: ChargebeeItemPrice): Json {
   return compact({
     id: p.cb_id,
     name: p.name,
+    price_variant_id: p.price_variant_id ?? undefined,
     item_family_id: p.item_family_id,
     item_id: p.item_id,
     description: p.description,
@@ -263,8 +264,12 @@ export function formatSubscription(cs: ChargebeeStore, s: ChargebeeSubscription)
     currency_code: s.currency_code,
     subscription_items: s.subscription_items.map((item) => ({ ...item, object: "subscription_item" })),
     coupons: s.coupons.length > 0 ? s.coupons.map((coupon) => compact({ ...coupon, object: "coupon" })) : undefined,
+    discounts:
+      s.discounts.length > 0 ? s.discounts.map((discount) => compact({ ...discount, object: "discount" })) : undefined,
     billing_period: s.billing_period,
     billing_period_unit: s.billing_period_unit,
+    billing_cycles: s.billing_cycles,
+    remaining_billing_cycles: s.remaining_billing_cycles,
     start_date: s.status === "future" ? s.start_date : undefined,
     trial_start: s.trial_start,
     trial_end: s.trial_end,

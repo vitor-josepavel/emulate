@@ -74,6 +74,7 @@ function parseItemPriceFields(body: Body, existing?: ChargebeeItemPrice): Partia
   if (body.name !== undefined) fields.name = str(body.name) ?? existing?.name ?? "";
   if (body.external_name !== undefined) fields.external_name = strOrNull(body.external_name);
   if (body.description !== undefined) fields.description = strOrNull(body.description);
+  if (body.price_variant_id !== undefined) fields.price_variant_id = strOrNull(body.price_variant_id);
   if (body.pricing_model !== undefined) {
     const value = str(body.pricing_model) ?? "";
     if (!PRICING_MODELS.has(value)) throw paramError("pricing_model", "is not a valid pricing model");
@@ -334,6 +335,7 @@ export function catalogRoutes(rc: ChargebeeRouteContext): void {
       const itemPrice = cs.itemPrices.insert({
         cb_id: id,
         name,
+        price_variant_id: null,
         external_name: null,
         description: null,
         item_id: item.cb_id,

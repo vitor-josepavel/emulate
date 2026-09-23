@@ -88,6 +88,7 @@ export interface ChargebeeSeedConfig {
       external_name?: string;
       description?: string;
       item: string;
+      price_variant_id?: string;
       pricing_model?: PricingModel;
       price?: number;
       currency_code?: string;
@@ -144,6 +145,7 @@ export interface ChargebeeSeedConfig {
       current_term_start?: SeedTimestamp;
       current_term_end?: SeedTimestamp;
       coupons?: string[];
+      billing_cycles?: number;
       auto_collection?: AutoCollection;
       po_number?: string;
       invoice_notes?: string;
@@ -461,6 +463,7 @@ export function seedFromConfig(
       show_description_in_quotes: false,
       invoice_notes: null,
       metadata: price.metadata ?? null,
+      price_variant_id: price.price_variant_id ?? null,
       custom_fields: customFieldsOf(price),
       archived_at: null,
       resource_version: resourceVersion(cs),
@@ -578,8 +581,11 @@ export function seedFromConfig(
       currency_code: plan.currency_code,
       subscription_items: items,
       coupons,
+      discounts: [],
       billing_period: period,
       billing_period_unit: periodUnit,
+      billing_cycles: entry.billing_cycles ?? null,
+      remaining_billing_cycles: entry.billing_cycles ?? null,
       start_date: status === "future" ? (startDate ?? termStart) : null,
       trial_start: status === "in_trial" ? now : null,
       trial_end: status === "in_trial" ? (trialEnd ?? addPeriod(now, 14, "day")) : null,

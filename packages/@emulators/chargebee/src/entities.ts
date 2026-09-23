@@ -97,6 +97,7 @@ export interface PriceTier {
 export interface ChargebeeItemPrice extends Entity {
   cb_id: string;
   name: string;
+  price_variant_id: string | null;
   external_name: string | null;
   description: string | null;
   item_id: string;
@@ -166,6 +167,26 @@ export interface SubscriptionCoupon {
   applied_count: number;
 }
 
+export interface SubscriptionDiscount {
+  id: string;
+  invoice_name: string | null;
+  type: "fixed_amount" | "percentage";
+  percentage: number | null;
+  amount: number | null;
+  currency_code: string | null;
+  duration_type: "one_time" | "forever" | "limited_period";
+  period: number | null;
+  period_unit: PeriodUnit | null;
+  included_in_mrr: boolean;
+  apply_on: "invoice_amount" | "specific_item_price";
+  item_price_id: string | null;
+  quantity: number | null;
+  created_at: number;
+  apply_till: number | null;
+  applied_count: number;
+  coupon_id: string | null;
+}
+
 export interface ScheduledChanges {
   subscription_items: SubscriptionItem[];
 }
@@ -177,8 +198,11 @@ export interface ChargebeeSubscription extends Entity {
   currency_code: string;
   subscription_items: SubscriptionItem[];
   coupons: SubscriptionCoupon[];
+  discounts: SubscriptionDiscount[];
   billing_period: number;
   billing_period_unit: PeriodUnit;
+  billing_cycles: number | null;
+  remaining_billing_cycles: number | null;
   start_date: number | null;
   trial_start: number | null;
   trial_end: number | null;

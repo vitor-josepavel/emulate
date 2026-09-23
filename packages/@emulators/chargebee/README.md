@@ -24,9 +24,9 @@ The default seed includes item family `local-products`, plan `pro-plan` with ite
 All API routes live under `/api/v2` and use HTTP Basic auth with the API key as the username.
 
 - Customers: `POST /customers`, `GET /customers`, `GET /customers/:id`, `POST /customers/:id`, `update_billing_info`, `update_payment_method`, `assign_payment_role`, promotional credits, `collect_payment`, `delete`, `clear_personal_data`, `relationships`, `delete_relationship`, `GET /customers/:id/hierarchy`
-- Catalog: `item_families`, `items`, `item_prices` (create, retrieve, update, list, delete, `applicable_items`, `applicable_item_prices`)
+- Catalog: `item_families`, `items`, `item_prices` (create, retrieve, update, list, delete, `applicable_items`, `applicable_item_prices`); item prices carry `price_variant_id`
 - Coupons: `POST /coupons/create_for_items`, list, retrieve, `update_for_items`, `delete`, `unarchive`
-- Subscriptions: `POST /customers/:id/subscription_for_items`, `POST /subscriptions/create_with_items`, `POST /customers/:id/import_for_items`, list, retrieve, `retrieve_with_scheduled_changes`, `update_for_items`, `change_term_end`, `cancel_for_items`, `remove_scheduled_cancellation`, `remove_scheduled_changes`, `reactivate`, `pause`, `resume`, `delete`
+- Subscriptions: `POST /customers/:id/subscription_for_items`, `POST /subscriptions/create_with_items`, `POST /customers/:id/import_for_items` (with `coupon_ids`, ad-hoc `discounts[...]`, `billing_cycles`, `cf_*`), list, retrieve, `retrieve_with_scheduled_changes`, `update_for_items`, `change_term_end`, `cancel_for_items`, `remove_scheduled_cancellation`, `remove_scheduled_changes`, `reactivate`, `pause`, `resume`, `delete`
 - Invoices: `create_for_charge_items_and_charges`, `charge`, list (also per customer and subscription), retrieve, `pdf`, `record_payment`, `collect_payment`, `void`, `write_off`, `delete`, `remove_payment`, `remove_credit_note`, `apply_credits`, `update_details`, `refund`, `record_refund`, `payments`
 - Credit notes: create, list, retrieve, `pdf`, `void`, `delete`, `refund`, `record_refund`
 - Transactions: list (also per customer and subscription), retrieve, `refund`
@@ -65,6 +65,14 @@ chargebee:
       currency_code: USD
       period: 1
       period_unit: month
+    - id: pro-plan-EUR-Yearly-Grade-A
+      item: pro-plan
+      price_variant_id: Grade-A
+      pricing_model: per_unit
+      price: 1000
+      currency_code: EUR
+      period: 1
+      period_unit: year
   customers:
     - id: local-customer
       email: test@example.com
@@ -73,6 +81,7 @@ chargebee:
   subscriptions:
     - id: local-subscription
       customer: local-customer
+      billing_cycles: 12
       items:
         - item_price: pro-plan-USD-Monthly
   webhooks:

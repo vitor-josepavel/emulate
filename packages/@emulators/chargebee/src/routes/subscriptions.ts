@@ -44,6 +44,7 @@ import {
   findSubscription,
   nested,
   parseCharges,
+  parseDiscounts,
   parseItemRequests,
   type ChargebeeRouteContext,
 } from "../route-utils.js";
@@ -113,6 +114,8 @@ export function subscriptionRoutes(rc: ChargebeeRouteContext): void {
       id: str(body.id),
       items: parseItemRequests(body),
       couponIds: stringList(body.coupon_ids),
+      discounts: parseDiscounts(cs, body, nowSeconds(cs)),
+      billingCycles: num(body.billing_cycles) ?? null,
       trialEnd: optionalTimestamp(body, "trial_end"),
       startDate: optionalTimestamp(body, "start_date"),
       autoCollection: parseSubscriptionUpdates(body).auto_collection ?? null,
@@ -153,6 +156,8 @@ export function subscriptionRoutes(rc: ChargebeeRouteContext): void {
         id: str(subscriptionBody.id) ?? str(body.id),
         items: parseItemRequests(body),
         couponIds: stringList(body.coupon_ids),
+        discounts: parseDiscounts(cs, body, nowSeconds(cs)),
+        billingCycles: num(subscriptionBody.billing_cycles) ?? num(body.billing_cycles) ?? null,
         trialEnd: optionalTimestamp(subscriptionBody, "trial_end") ?? optionalTimestamp(body, "trial_end"),
         startDate: optionalTimestamp(subscriptionBody, "start_date") ?? optionalTimestamp(body, "start_date"),
         autoCollection: parseSubscriptionUpdates(subscriptionBody).auto_collection ?? null,
@@ -187,6 +192,7 @@ export function subscriptionRoutes(rc: ChargebeeRouteContext): void {
       const startDate = optionalTimestamp(body, "start_date") ?? null;
       const inTerm = status === "active" || status === "non_renewing" || status === "paused";
       const coupons = resolveCoupons(cs, stringList(body.coupon_ids), termStart);
+      const billingCycles = num(body.billing_cycles) ?? null;
       const subscription = cs.subscriptions.insert({
         cb_id: id,
         customer_id: customer.cb_id,
@@ -194,8 +200,11 @@ export function subscriptionRoutes(rc: ChargebeeRouteContext): void {
         currency_code: plan.currency_code,
         subscription_items: items,
         coupons,
+        discounts: parseDiscounts(cs, body, now),
         billing_period: period,
         billing_period_unit: periodUnit,
+        billing_cycles: billingCycles,
+        remaining_billing_cycles: billingCycles,
         start_date: status === "future" ? (startDate ?? termStart) : null,
         trial_start: status === "in_trial" ? (optionalTimestamp(body, "trial_start") ?? now) : null,
         trial_end: status === "in_trial" ? (trialEnd ?? addPeriod(now, 14, "day")) : trialEnd,

@@ -14,9 +14,20 @@ import type {
   ChargebeePortalSession,
   ChargebeeSubscription,
   ChargebeeTransaction,
+  SubscriptionDiscount,
 } from "./entities.js";
 import type { ChargebeeCtx } from "./events.js";
-import { ChargebeeApiError, authenticate, columnar, notFoundError, num, sendApiError, type Body } from "./helpers.js";
+import {
+  ChargebeeApiError,
+  authenticate,
+  columnar,
+  notFoundError,
+  num,
+  paramError,
+  sendApiError,
+  type Body,
+} from "./helpers.js";
+import { prefixedId } from "./ids.js";
 import type { ChargebeeStore } from "./store.js";
 
 export interface ChargebeeRouteContext {
@@ -134,4 +145,47 @@ export function parseCharges(body: Body): ChargeRequest[] {
 export function nested(body: Body, key: string): Body {
   const value = body[key];
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Body) : {};
+}
+
+const DISCOUNT_APPLY_ON = new Set(["invoice_amount", "specific_item_price"]);
+const DISCOUNT_DURATIONS = new Set(["one_time", "forever", "limited_period"]);
+
+/** Ad-hoc `discounts[...]` rows sent alongside a subscription. They are recorded on the subscription, not applied to invoices. */
+export function parseDiscounts(cs: ChargebeeStore, body: Body, now: number): SubscriptionDiscount[] {
+  return columnar(body.discounts).map((row, index) => {
+    const applyOn = row.apply_on ?? "invoice_amount";
+    if (!DISCOUNT_APPLY_ON.has(applyOn)) throw paramError(`discounts[apply_on][${index}]`, "is not a valid value");
+    const durationType = row.duration_type ?? "forever";
+    if (!DISCOUNT_DURATIONS.has(durationType))
+      throw paramError(`discounts[duration_type][${index}]`, "is not a valid value");
+    const percentage = num(row.percentage);
+    const amount = num(row.amount);
+    const quantity = num(row.quantity);
+    if (percentage === undefined && amount === undefined && quantity === undefined)
+      throw paramError(`discounts[percentage][${index}]`, "cannot be blank");
+    if (applyOn === "specific_item_price") {
+      if (!row.item_price_id) throw paramError(`discounts[item_price_id][${index}]`, "cannot be blank");
+      if (!cs.itemPrices.findOneBy("cb_id", row.item_price_id))
+        throw paramError(`discounts[item_price_id][${index}]`, `${row.item_price_id} is not a valid item price id`);
+    }
+    return {
+      id: prefixedId("di", 12),
+      invoice_name: row.invoice_name ?? null,
+      type: percentage !== undefined ? "percentage" : "fixed_amount",
+      percentage: percentage ?? null,
+      amount: amount ?? null,
+      currency_code: amount !== undefined ? (row.currency_code ?? null) : null,
+      duration_type: durationType as SubscriptionDiscount["duration_type"],
+      period: num(row.period) ?? null,
+      period_unit: (row.period_unit as SubscriptionDiscount["period_unit"]) ?? null,
+      included_in_mrr: row.included_in_mrr === "true",
+      apply_on: applyOn as SubscriptionDiscount["apply_on"],
+      item_price_id: applyOn === "specific_item_price" ? row.item_price_id : null,
+      quantity: quantity ?? null,
+      created_at: now,
+      apply_till: null,
+      applied_count: 0,
+      coupon_id: null,
+    };
+  });
 }
