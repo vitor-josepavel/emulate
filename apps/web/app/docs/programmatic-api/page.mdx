@@ -135,6 +135,32 @@ afterAll(() => Promise.all([github.close(), vercel.close()]))
   </tbody>
 </table>
 
+## Namespaces
+
+One emulator process can serve many isolated test runs. Send the `x-emulate-namespace` header and the emulator works on a private copy of its state:
+
+- A namespace seen for the first time is forked from the default namespace, so it starts with the seed data (API keys, catalog, fixtures) and diverges from there.
+- Resources created under one namespace are invisible to every other namespace and to requests without the header.
+- Webhooks emitted while handling a namespaced request carry the same `x-emulate-namespace` header, so the receiver can route the delivery back to the run that caused it.
+- `GET /_emulate/namespaces` lists the namespaces seen so far and `DELETE /_emulate/namespaces/{name}` forgets one.
+
+This is what lets parallel Playwright workers share one emulator: each test uses its own namespace, exactly as it would use its own database.
+
+```typescript
+const chargebee = new Chargebee({
+  site: 'localhost', hostSuffix: '', protocol: 'http', port: 4014,
+  apiKey: 'test_emulate_chargebee_api_key',
+  httpClient: {
+    makeApiRequest: (request, timeout) => {
+      request.headers.set('x-emulate-namespace', currentTestId)
+      return fetch(request, { signal: AbortSignal.timeout(timeout) })
+    },
+  },
+})
+```
+
+`reset()` clears the current namespace only. Webhook subscriptions registered through a service API (Zendesk, Mailgun) are shared across namespaces.
+
 ## Scoped packages
 
 Each emulator is published as its own `@emulators/*` package. Install only the ones you need:

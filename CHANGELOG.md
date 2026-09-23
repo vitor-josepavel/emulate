@@ -1,6 +1,20 @@
 # Changelog
 
 <!-- release:start -->
+## 0.13.0
+
+### New Features
+
+- **Namespaces** let one emulator process serve many isolated test runs: the `x-emulate-namespace` header selects a private copy of the store, forked from the seed on first use, and emitted webhooks carry the header back to the receiver. `GET /_emulate/namespaces` lists namespaces and `DELETE /_emulate/namespaces/{name}` drops one
+- **Chargebee price variants** are stored and listed on item prices through `price_variant_id`, in seeds and in the API
+- **Chargebee ad-hoc discounts and billing cycles** are accepted on `subscription_for_items`, `create_with_items` and `import_for_items` and returned as `discounts`, `billing_cycles` and `remaining_billing_cycles`
+
+### Improvements
+
+- **Release workflow** builds the self-contained `emulate` tarball and attaches it to the GitHub release instead of publishing to npm
+
+<!-- release:end -->
+
 ## 0.12.0
 
 ### New Features
@@ -22,8 +36,6 @@
 - **Pennylane appendices** accept XLSX invoice attachments by default, matching the upstream API (#1)
 - **Docs navigation** lists every emulator in the sidebar and mobile nav (#1)
 - **Configuration example** carries a starter section for all 25 registry services (#1)
-
-<!-- release:end -->
 
 ## 0.11.2
 
