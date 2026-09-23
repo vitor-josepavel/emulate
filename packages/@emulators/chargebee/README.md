@@ -47,6 +47,9 @@ Events are delivered as Chargebee event payloads (`{ id, occurred_at, source, ob
 ```yaml
 chargebee:
   site: emulate-test
+  # Chargebee accepts exactly one plan per subscription; "at_least_one" relaxes
+  # this for loosely modelled catalogs.
+  plan_rule: exactly_one
   api_keys:
     - key: test_emulate_chargebee_api_key
   item_families:

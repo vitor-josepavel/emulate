@@ -69,6 +69,10 @@ export function getChargebeeStore(store: Store): ChargebeeStore {
 const CLOCK_OFFSET_KEY = "chargebee.clock_offset_seconds";
 const GENESIS_KEY = "chargebee.genesis_time";
 const SITE_KEY = "chargebee.site";
+const PLAN_RULE_KEY = "chargebee.plan_rule";
+
+/** Chargebee requires exactly one plan per subscription; loosely modelled catalogs can opt into "at_least_one". */
+export type PlanRule = "exactly_one" | "at_least_one";
 const SEQUENCE_PREFIX = "chargebee.sequence.";
 
 export function nowSeconds(cs: ChargebeeStore): number {
@@ -111,6 +115,14 @@ export function siteName(cs: ChargebeeStore): string {
 
 export function setSiteName(cs: ChargebeeStore, value: string): void {
   cs.raw.setData(SITE_KEY, value);
+}
+
+export function planRule(cs: ChargebeeStore): PlanRule {
+  return cs.raw.getData<PlanRule>(PLAN_RULE_KEY) ?? "exactly_one";
+}
+
+export function setPlanRule(cs: ChargebeeStore, value: PlanRule): void {
+  cs.raw.setData(PLAN_RULE_KEY, value);
 }
 
 export function nextSequence(cs: ChargebeeStore, name: string): number {

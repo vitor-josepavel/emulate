@@ -39,7 +39,7 @@ import {
   roundMoney,
 } from "./helpers.js";
 import { chargebeeId, prefixedId } from "./ids.js";
-import { nextSequence, nowSeconds, resourceVersion, type ChargebeeStore } from "./store.js";
+import { nextSequence, nowSeconds, planRule, resourceVersion, type ChargebeeStore } from "./store.js";
 
 export interface ItemRequest {
   item_price_id: string;
@@ -118,8 +118,11 @@ export function resolveItems(
     } satisfies SubscriptionItem;
   });
   const plans = items.filter((item) => item.item_type === "plan");
-  if (plans.length !== 1) {
+  if (planRule(cs) === "exactly_one" && plans.length !== 1) {
     throw paramError(`${param}[item_price_id]`, "exactly one plan item price is required", "param_wrong_value");
+  }
+  if (plans.length === 0) {
+    throw paramError(`${param}[item_price_id]`, "at least one plan item price is required", "param_wrong_value");
   }
   const currencies = new Set(items.map((item) => cs.itemPrices.findOneBy("cb_id", item.item_price_id)!.currency_code));
   if (currencies.size > 1) {

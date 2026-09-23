@@ -230,6 +230,7 @@ One emulator process can serve many isolated test runs. Send the `x-emulate-name
 - Resources created under one namespace are invisible to every other namespace and to requests without the header.
 - Webhooks emitted while handling a namespaced request carry the same `x-emulate-namespace` header, so the receiver can route the delivery back to the run that caused it.
 - `GET /_emulate/namespaces` lists the namespaces seen so far and `DELETE /_emulate/namespaces/{name}` forgets one.
+- The fake rate limit (5000 requests per hour per token) is counted per namespace.
 
 This is what lets parallel Playwright workers share one emulator: each test uses its own namespace, exactly as it would use its own database.
 
@@ -1181,6 +1182,8 @@ Active subscriptions generate a term invoice on creation and on each renewal. Cu
 Chargebee webhooks POST the standard event payload (`id`, `occurred_at`, `source`, `object: "event"`, `api_version: "v2"`, `event_type`, `content`, `webhook_status`). Webhooks configured with `username` and `password` include an `Authorization: Basic` header.
 
 The Chargebee Node SDK works against the emulator with `site: "localhost"`, `hostSuffix: ""`, `protocol: "http"`, and the emulator port.
+
+Like Chargebee, a subscription needs exactly one plan item price. Seed `chargebee.plan_rule: at_least_one` to accept several plans on catalogs that are modelled loosely.
 
 Current Chargebee limits: Product Catalog 1.0 endpoints (plans, addons, `POST /subscriptions`), taxes, exchange rates, usage-based billing, quotes, orders, gifts, contract terms, dunning retries, advance invoices, Chargebee.js tokenization, and the JS checkout drop-in are not implemented. Ad-hoc `discounts[...]` and `billing_cycles` are recorded on the subscription but not applied to generated invoices.
 
