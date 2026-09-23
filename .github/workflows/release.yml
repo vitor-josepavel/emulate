@@ -1,5 +1,12 @@
 name: Release
 
+# This fork is not published to npm: the `emulate` package names belong to the
+# upstream project. Instead, every version bump on main builds the
+# self-contained `emulate` tarball (it bundles all @emulators/* packages) and
+# attaches it to a GitHub release. Consumers depend on the asset URL:
+#
+#   "emulate": "https://github.com/vitor-josepavel/emulate/releases/download/v0.13.0/emulate-0.13.0.tgz"
+
 on:
   push:
     branches:
@@ -13,9 +20,6 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  EMULATOR_PACKAGES: adapter-next adapter-nuxt apple aws chargebee clerk core cybersoar defender document360 elastic github google graph linear mailgun microsoft mongoatlas okta pennylane resend scaleway sentinelone slack stripe twilio vercel zendesk
-
 jobs:
   check-release:
     name: Check for new version
@@ -27,38 +31,28 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Compare versions to registry
+      - name: Compare version to the latest GitHub release
         id: check
         run: |
           LOCAL_VERSION=$(node -p "require('./packages/emulate/package.json').version")
-          SHOULD_RELEASE=false
-
-          REGISTRY_VERSION=$(npm view emulate version 2>/dev/null || echo "0.0.0")
-          echo "emulate — local: $LOCAL_VERSION, registry: $REGISTRY_VERSION"
-          if [ "$LOCAL_VERSION" != "$REGISTRY_VERSION" ]; then
-            SHOULD_RELEASE=true
+          if gh release view "v$LOCAL_VERSION" &>/dev/null; then
+            echo "v$LOCAL_VERSION is already released"
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "v$LOCAL_VERSION is not released yet"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
           fi
-
-          for pkg in $EMULATOR_PACKAGES; do
-            REGISTRY_VERSION=$(npm view "@emulators/$pkg" version 2>/dev/null || echo "0.0.0")
-            echo "@emulators/$pkg — local: $LOCAL_VERSION, registry: $REGISTRY_VERSION"
-            if [ "$LOCAL_VERSION" != "$REGISTRY_VERSION" ]; then
-              SHOULD_RELEASE=true
-            fi
-          done
-
-          echo "should_release=$SHOULD_RELEASE" >> "$GITHUB_OUTPUT"
           echo "version=$LOCAL_VERSION" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  publish:
-    name: Publish
+  release:
+    name: Build and release
     needs: check-release
     if: needs.check-release.outputs.should_release == 'true'
     runs-on: ubuntu-latest
-    environment: Release
     permissions:
-      contents: read
-      id-token: write
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -75,56 +69,22 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check versions are in sync
+        run: node scripts/sync-versions.mjs --check
+
       - name: Build
         run: pnpm build
 
-      - name: Publish packages
+      - name: Pack emulate
+        id: pack
         run: |
-          LOCAL_VERSION="${{ needs.check-release.outputs.version }}"
-          FAILED=""
-
-          # pnpm pack resolves workspace:* protocols in the tarball;
-          # npm publish handles OIDC trusted-publisher auth.
-          publish_pkg() {
-            local dir="$1" name="$2"
-            REGISTRY_VERSION=$(npm view "$name" version 2>/dev/null || echo "0.0.0")
-            if [ "$LOCAL_VERSION" = "$REGISTRY_VERSION" ]; then
-              echo "$name@$LOCAL_VERSION already published, skipping"
-              return 0
-            fi
-            echo "Publishing $name@$LOCAL_VERSION..."
-            TARBALL=$(cd "$dir" && pnpm pack --pack-destination /tmp | tail -1)
-            if ! npm publish "$TARBALL" --provenance --access public; then
-              FAILED="$FAILED $name"
-            fi
-          }
-
-          publish_pkg packages/emulate emulate
-
-          for pkg in $EMULATOR_PACKAGES; do
-            publish_pkg "packages/@emulators/$pkg" "@emulators/$pkg"
-          done
-
-          if [ -n "$FAILED" ]; then
-            echo "Failed to publish:$FAILED"
-            exit 1
-          fi
-
-  github-release:
-    name: Create GitHub Release
-    needs: [check-release, publish]
-    if: needs.check-release.outputs.should_release == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+          mkdir -p /tmp/release
+          TARBALL=$(cd packages/emulate && pnpm pack --pack-destination /tmp/release | tail -1)
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+          ls -la /tmp/release
 
       - name: Extract changelog entry
         run: |
-          VERSION="${{ needs.check-release.outputs.version }}"
-
           awk '/<!-- release:start -->/{found=1; next} /<!-- release:end -->/{found=0} found{print}' CHANGELOG.md > /tmp/release-notes.md
 
           LINES=$(wc -l < /tmp/release-notes.md | tr -d ' ')
@@ -132,21 +92,21 @@ jobs:
             echo "Error: No release notes found between <!-- release:start --> and <!-- release:end --> markers in CHANGELOG.md"
             exit 1
           fi
-          echo "Extracted release notes for $VERSION ($LINES lines)"
+          {
+            echo ""
+            echo "### Install"
+            echo ""
+            echo '```json'
+            echo "\"emulate\": \"https://github.com/${{ github.repository }}/releases/download/v${{ needs.check-release.outputs.version }}/$(basename "${{ steps.pack.outputs.tarball }}")\""
+            echo '```'
+          } >> /tmp/release-notes.md
 
-      - name: Create GitHub Release
+      - name: Create GitHub release
         run: |
-          VERSION="${{ needs.check-release.outputs.version }}"
-          TAG="v$VERSION"
-
-          if gh release view "$TAG" &>/dev/null; then
-            echo "Release $TAG already exists, skipping"
-          else
-            echo "Creating release $TAG..."
-            gh release create "$TAG" \
-              --title "$TAG" \
-              --target ${{ github.sha }} \
-              --notes-file /tmp/release-notes.md
-          fi
+          TAG="v${{ needs.check-release.outputs.version }}"
+          gh release create "$TAG" "${{ steps.pack.outputs.tarball }}" \
+            --title "$TAG" \
+            --target ${{ github.sha }} \
+            --notes-file /tmp/release-notes.md
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

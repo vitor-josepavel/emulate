@@ -222,6 +222,32 @@ afterAll(() => Promise.all([github.close(), vercel.close()]))
 | `reset()` | Wipe the store and replay seed data |
 | `close()` | Shut down the HTTP server, returns a Promise |
 
+### Namespaces
+
+One emulator process can serve many isolated test runs. Send the `x-emulate-namespace` header and the emulator works on a private copy of its state:
+
+- A namespace seen for the first time is forked from the default namespace, so it starts with the seed data (API keys, catalog, fixtures) and diverges from there.
+- Resources created under one namespace are invisible to every other namespace and to requests without the header.
+- Webhooks emitted while handling a namespaced request carry the same `x-emulate-namespace` header, so the receiver can route the delivery back to the run that caused it.
+- `GET /_emulate/namespaces` lists the namespaces seen so far and `DELETE /_emulate/namespaces/{name}` forgets one.
+
+This is what lets parallel Playwright workers share one emulator: each test uses its own namespace, exactly as it would use its own database.
+
+```typescript
+const chargebee = new Chargebee({
+  site: 'localhost', hostSuffix: '', protocol: 'http', port: 4014,
+  apiKey: 'test_emulate_chargebee_api_key',
+  httpClient: {
+    makeApiRequest: (request, timeout) => {
+      request.headers.set('x-emulate-namespace', currentTestId)
+      return fetch(request, { signal: AbortSignal.timeout(timeout) })
+    },
+  },
+})
+```
+
+`reset()` and `store.reset()` clear the current namespace only. Webhook subscriptions registered through a service API (Zendesk, Mailgun) are shared across namespaces.
+
 ## Configuration
 
 Configuration is optional. The CLI auto-detects config files in this order: `emulate.config.yaml` / `.yml`, `emulate.config.json`, `service-emulator.config.yaml` / `.yml`, `service-emulator.config.json`. Or pass `--seed <file>` explicitly. Run `npx emulate init` to generate a starter file.
@@ -1134,9 +1160,9 @@ All API routes live under `/api/v2` and use HTTP Basic auth with the API key as 
 
 - `POST /api/v2/customers`, `GET /api/v2/customers`, `GET /api/v2/customers/{id}`, `POST /api/v2/customers/{id}`, `POST /api/v2/customers/{id}/delete` - customers with `cf_*` custom fields and Chargebee list filters
 - `POST /api/v2/customers/{id}/relationships`, `GET /api/v2/customers/{id}/hierarchy` - account hierarchy
-- `POST /api/v2/item_families`, `POST /api/v2/items`, `POST /api/v2/item_prices`, `GET /api/v2/item_prices` - Product Catalog 2.0
+- `POST /api/v2/item_families`, `POST /api/v2/items`, `POST /api/v2/item_prices`, `GET /api/v2/item_prices` - Product Catalog 2.0, with `price_variant_id` on item prices
 - `POST /api/v2/coupons/create_for_items`, `GET /api/v2/coupons` - coupons
-- `POST /api/v2/customers/{id}/subscription_for_items`, `POST /api/v2/subscriptions/create_with_items`, `POST /api/v2/customers/{id}/import_for_items` - create subscriptions
+- `POST /api/v2/customers/{id}/subscription_for_items`, `POST /api/v2/subscriptions/create_with_items`, `POST /api/v2/customers/{id}/import_for_items` - create subscriptions, with `coupon_ids`, ad-hoc `discounts[...]`, `billing_cycles`, and `cf_*` custom fields
 - `GET /api/v2/subscriptions`, `GET /api/v2/subscriptions/{id}`, `POST /api/v2/subscriptions/{id}/update_for_items`, `cancel_for_items`, `remove_scheduled_cancellation`, `reactivate`, `pause`, `resume`, `change_term_end`, `delete` - subscription lifecycle with proration
 - `GET /api/v2/invoices`, `GET /api/v2/invoices/{id}`, `POST /api/v2/invoices/{id}/pdf`, `record_payment`, `collect_payment`, `void`, `write_off`, `refund`, `apply_credits`, `POST /api/v2/invoices/create_for_charge_items_and_charges` - invoices
 - `POST /api/v2/credit_notes`, `GET /api/v2/credit_notes`, `GET /api/v2/transactions` - credit notes and transactions
@@ -1156,7 +1182,7 @@ Chargebee webhooks POST the standard event payload (`id`, `occurred_at`, `source
 
 The Chargebee Node SDK works against the emulator with `site: "localhost"`, `hostSuffix: ""`, `protocol: "http"`, and the emulator port.
 
-Current Chargebee limits: Product Catalog 1.0 endpoints (plans, addons, `POST /subscriptions`), taxes, exchange rates, usage-based billing, quotes, orders, gifts, contract terms, dunning retries, advance invoices, Chargebee.js tokenization, and the JS checkout drop-in are not implemented.
+Current Chargebee limits: Product Catalog 1.0 endpoints (plans, addons, `POST /subscriptions`), taxes, exchange rates, usage-based billing, quotes, orders, gifts, contract terms, dunning retries, advance invoices, Chargebee.js tokenization, and the JS checkout drop-in are not implemented. Ad-hoc `discounts[...]` and `billing_cycles` are recorded on the subscription but not applied to generated invoices.
 
 ## Zendesk API
 

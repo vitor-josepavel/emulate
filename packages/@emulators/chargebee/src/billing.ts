@@ -16,6 +16,7 @@ import type {
   MetaData,
   PaymentMethodType,
   SubscriptionCoupon,
+  SubscriptionDiscount,
   SubscriptionItem,
 } from "./entities.js";
 import type { ChargebeeCtx } from "./events.js";
@@ -646,6 +647,8 @@ export interface CreateSubscriptionInput {
   id?: string;
   items: ItemRequest[];
   couponIds?: string[];
+  discounts?: SubscriptionDiscount[];
+  billingCycles?: number | null;
   trialEnd?: number;
   startDate?: number;
   autoCollection?: AutoCollection | null;
@@ -705,8 +708,11 @@ export async function createSubscription(
     currency_code: plan.currency_code,
     subscription_items: items,
     coupons,
+    discounts: input.discounts ?? [],
     billing_period: period,
     billing_period_unit: periodUnit,
+    billing_cycles: input.billingCycles ?? null,
+    remaining_billing_cycles: input.billingCycles ?? null,
     cancelled_at: null,
     cancel_reason: null,
     cancel_reason_code: null,

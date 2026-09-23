@@ -14,6 +14,13 @@ export {
 } from "./store.js";
 export { createServer, type ServerOptions } from "./server.js";
 export {
+  NAMESPACE_HEADER,
+  DEFAULT_NAMESPACE,
+  currentNamespace,
+  runInNamespace,
+  namespaceMiddleware,
+} from "./namespace.js";
+export {
   Hono,
   Context,
   HonoRequest,

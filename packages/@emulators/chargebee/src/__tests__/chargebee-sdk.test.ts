@@ -99,3 +99,95 @@ describe("Chargebee Node SDK against the emulator", () => {
     expect(after.subscription.current_term_start).toBe(before.subscription.current_term_end);
   });
 });
+
+describe("Chargebee Node SDK: platform billing fields", () => {
+  it("keeps price variants on item prices and finds them through the SDK", async () => {
+    const ctx = createChargebeeTestApp({
+      item_prices: [
+        {
+          id: "pro-plan-EUR-Yearly-Grade-A",
+          item: "pro-plan",
+          price_variant_id: "Grade-A",
+          pricing_model: "per_unit",
+          price: 1000,
+          currency_code: "EUR",
+          period: 1,
+          period_unit: "year",
+        },
+      ],
+    });
+    const chargebee = createClient(ctx);
+
+    const prices = await chargebee.itemPrice.list({ item_id: { is: "pro-plan" }, limit: 100 });
+    const graded = prices.list.find((row) => row.item_price.price_variant_id === "Grade-A");
+    expect(graded?.item_price.id).toBe("pro-plan-EUR-Yearly-Grade-A");
+    expect(prices.list.filter((row) => row.item_price.price_variant_id).length).toBe(1);
+
+    const created = await chargebee.itemPrice.create({
+      id: "pro-plan-EUR-Yearly-Grade-B",
+      name: "Pro Plan EUR Yearly Grade B",
+      item_id: "pro-plan",
+      price_variant_id: "Grade-B",
+      pricing_model: "per_unit",
+      price: 900,
+      currency_code: "EUR",
+      period: 1,
+      period_unit: "year",
+    });
+    expect(created.item_price.price_variant_id).toBe("Grade-B");
+  });
+
+  it("records discounts, billing cycles and custom fields on an imported subscription", async () => {
+    const ctx = createChargebeeTestApp();
+    const chargebee = createClient(ctx);
+    const startedAt = Math.floor(Date.now() / 1000) - 86400;
+
+    const imported = await chargebee.subscription.importForItems(DEFAULT_CUSTOMER_ID, {
+      subscription_items: [
+        { item_price_id: DEFAULT_PLAN_MONTHLY_PRICE_ID },
+        { item_price_id: DEFAULT_ADDON_PRICE_ID, quantity: 10, unit_price: 500 },
+      ],
+      status: "active",
+      started_at: startedAt,
+      current_term_start: startedAt,
+      current_term_end: startedAt + 30 * 86400,
+      billing_cycles: 36,
+      auto_collection: "off",
+      create_current_term_invoice: false,
+      discounts: [
+        {
+          apply_on: "specific_item_price",
+          duration_type: "forever",
+          item_price_id: DEFAULT_ADDON_PRICE_ID,
+          quantity: 2,
+        },
+        { apply_on: "invoice_amount", duration_type: "forever", percentage: 20 },
+      ],
+      cf_billingRef: "ABC",
+    } as Parameters<typeof chargebee.subscription.importForItems>[1]);
+
+    const subscription = imported.subscription as Record<string, unknown>;
+    expect(subscription.billing_cycles).toBe(36);
+    expect(subscription.remaining_billing_cycles).toBe(36);
+    expect(subscription.cf_billingRef).toBe("ABC");
+    expect(subscription.discounts).toEqual([
+      expect.objectContaining({ apply_on: "specific_item_price", item_price_id: DEFAULT_ADDON_PRICE_ID, quantity: 2 }),
+      expect.objectContaining({ apply_on: "invoice_amount", type: "percentage", percentage: 20 }),
+    ]);
+
+    const retrieved = await chargebee.subscription.retrieve(imported.subscription.id);
+    expect(retrieved.subscription).toEqual(imported.subscription);
+  });
+
+  it("rejects a discount on an unknown item price", async () => {
+    const ctx = createChargebeeTestApp();
+    const chargebee = createClient(ctx);
+
+    await expect(
+      chargebee.subscription.importForItems(DEFAULT_CUSTOMER_ID, {
+        subscription_items: [{ item_price_id: DEFAULT_PLAN_MONTHLY_PRICE_ID }],
+        discounts: [{ apply_on: "specific_item_price", duration_type: "forever", item_price_id: "nope", quantity: 1 }],
+      } as Parameters<typeof chargebee.subscription.importForItems>[1]),
+    ).rejects.toMatchObject({ api_error_code: "param_wrong_value", param: "discounts[item_price_id][0]" });
+  });
+});

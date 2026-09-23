@@ -11,6 +11,7 @@ import {
 } from "./middleware/auth.js";
 import type { ServicePlugin } from "./plugin.js";
 import { registerFontRoutes } from "./fonts.js";
+import { namespaceMiddleware } from "./namespace.js";
 
 export interface ServerOptions {
   port?: number;
@@ -45,6 +46,7 @@ export function createServer(plugin: ServicePlugin, options: ServerOptions = {})
   registerFontRoutes(app);
 
   app.onError(createApiErrorHandler(docsUrl));
+  app.use("*", namespaceMiddleware());
   app.use("*", cors());
   app.use("*", createErrorHandler(docsUrl));
   app.use("*", authMiddleware(tokenMap, options.appKeyResolver, options.fallbackUser));
@@ -87,6 +89,12 @@ export function createServer(plugin: ServicePlugin, options: ServerOptions = {})
     }
 
     await next();
+  });
+
+  app.get("/_emulate/namespaces", (c) => c.json({ namespaces: store.namespaces() }));
+  app.delete("/_emulate/namespaces/:namespace", (c) => {
+    const namespace = c.req.param("namespace");
+    return c.json({ namespace, dropped: store.dropNamespace(namespace) });
   });
 
   plugin.register(app, store, webhooks, baseUrl, tokenMap);
