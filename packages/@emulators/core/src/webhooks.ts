@@ -1,4 +1,5 @@
 import { createHmac } from "crypto";
+import { DEFAULT_NAMESPACE, NAMESPACE_HEADER, currentNamespace } from "./namespace.js";
 
 export interface WebhookSubscription {
   id: number;
@@ -135,6 +136,9 @@ export class WebhookDispatcher {
 
       try {
         const headers = this.headerFactory({ event, action, body, subscription: sub, deliveryId: delivery.id });
+        // The receiver can route the delivery back to the namespace that produced it.
+        const namespace = currentNamespace();
+        if (namespace !== DEFAULT_NAMESPACE) headers[NAMESPACE_HEADER] = namespace;
         const start = Date.now();
         const response = await fetch(sub.url, {
           method: "POST",

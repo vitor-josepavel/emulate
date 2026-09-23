@@ -1,3 +1,5 @@
+import { DEFAULT_NAMESPACE, currentNamespace } from "./namespace.js";
+
 export interface Entity {
   id: number;
   created_at: string;
@@ -60,24 +62,66 @@ export function deserializeValue(value: unknown): unknown {
   return value;
 }
 
+function cloneValue<V>(value: V): V {
+  try {
+    return structuredClone(value);
+  } catch {
+    return value;
+  }
+}
+
+interface CollectionState<T> {
+  items: Map<number, T>;
+  indexes: Map<string, Map<string, Set<number>>>;
+  autoId: number;
+}
+
+/**
+ * Rows live in one bucket per namespace (see `namespace.ts`). The schema
+ * (collection names and index fields) is shared; the rows are not.
+ */
 export class Collection<T extends Entity> {
-  private items = new Map<number, T>();
-  private indexes = new Map<string, Map<string | number, Set<number>>>();
-  private autoId = 1;
+  private states = new Map<string, CollectionState<T>>();
   readonly fieldNames: string[];
 
   constructor(private indexFields: (keyof T)[] = []) {
     this.fieldNames = indexFields.map(String).sort();
-    for (const field of indexFields) {
-      this.indexes.set(String(field), new Map());
-    }
   }
 
-  private addToIndex(item: T): void {
+  private emptyState(): CollectionState<T> {
+    const indexes = new Map<string, Map<string, Set<number>>>();
+    for (const field of this.indexFields) {
+      indexes.set(String(field), new Map());
+    }
+    return { items: new Map(), indexes, autoId: 1 };
+  }
+
+  private forkedState(source: CollectionState<T>): CollectionState<T> {
+    const state = this.emptyState();
+    state.autoId = source.autoId;
+    for (const [id, item] of source.items) {
+      const copy = cloneValue(item);
+      state.items.set(id, copy);
+      this.addToIndex(state, copy);
+    }
+    return state;
+  }
+
+  private state(): CollectionState<T> {
+    const namespace = currentNamespace();
+    const existing = this.states.get(namespace);
+    if (existing) return existing;
+    const base = this.states.get(DEFAULT_NAMESPACE);
+    const created = namespace !== DEFAULT_NAMESPACE && base ? this.forkedState(base) : this.emptyState();
+    this.states.set(namespace, created);
+    return created;
+  }
+
+  private addToIndex(state: CollectionState<T>, item: T): void {
     for (const field of this.indexFields) {
       const value = item[field];
       if (value === undefined || value === null) continue;
-      const indexMap = this.indexes.get(String(field))!;
+      const indexMap = state.indexes.get(String(field))!;
       const key = String(value);
       if (!indexMap.has(key)) {
         indexMap.set(key, new Set());
@@ -86,22 +130,23 @@ export class Collection<T extends Entity> {
     }
   }
 
-  private removeFromIndex(item: T): void {
+  private removeFromIndex(state: CollectionState<T>, item: T): void {
     for (const field of this.indexFields) {
       const value = item[field];
       if (value === undefined || value === null) continue;
-      const indexMap = this.indexes.get(String(field))!;
+      const indexMap = state.indexes.get(String(field))!;
       const key = String(value);
       indexMap.get(key)?.delete(item.id);
     }
   }
 
   insert(data: InsertInput<T>): T {
+    const state = this.state();
     const now = new Date().toISOString();
     const explicitId = data.id != null && data.id > 0 ? data.id : undefined;
-    const id = explicitId ?? this.autoId++;
-    if (id >= this.autoId) {
-      this.autoId = id + 1;
+    const id = explicitId ?? state.autoId++;
+    if (id >= state.autoId) {
+      state.autoId = id + 1;
     }
     const item = {
       ...data,
@@ -109,21 +154,22 @@ export class Collection<T extends Entity> {
       created_at: now,
       updated_at: now,
     } as unknown as T;
-    this.items.set(id, item);
-    this.addToIndex(item);
+    state.items.set(id, item);
+    this.addToIndex(state, item);
     return item;
   }
 
   get(id: number): T | undefined {
-    return this.items.get(id);
+    return this.state().items.get(id);
   }
 
   findBy(field: keyof T, value: T[keyof T] | string | number): T[] {
-    if (this.indexes.has(String(field))) {
-      const ids = this.indexes.get(String(field))!.get(String(value));
+    const state = this.state();
+    if (state.indexes.has(String(field))) {
+      const ids = state.indexes.get(String(field))!.get(String(value));
       if (!ids) return [];
       return Array.from(ids)
-        .map((id) => this.items.get(id)!)
+        .map((id) => state.items.get(id)!)
         .filter(Boolean);
     }
     return this.all().filter((item) => item[field] === value);
@@ -134,29 +180,31 @@ export class Collection<T extends Entity> {
   }
 
   update(id: number, data: Partial<T>): T | undefined {
-    const existing = this.items.get(id);
+    const state = this.state();
+    const existing = state.items.get(id);
     if (!existing) return undefined;
-    this.removeFromIndex(existing);
+    this.removeFromIndex(state, existing);
     const updated = {
       ...existing,
       ...data,
       id,
       updated_at: new Date().toISOString(),
     } as T;
-    this.items.set(id, updated);
-    this.addToIndex(updated);
+    state.items.set(id, updated);
+    this.addToIndex(state, updated);
     return updated;
   }
 
   delete(id: number): boolean {
-    const existing = this.items.get(id);
+    const state = this.state();
+    const existing = state.items.get(id);
     if (!existing) return false;
-    this.removeFromIndex(existing);
-    return this.items.delete(id);
+    this.removeFromIndex(state, existing);
+    return state.items.delete(id);
   }
 
   all(): T[] {
-    return Array.from(this.items.values());
+    return Array.from(this.state().items.values());
   }
 
   query(options: QueryOptions<T> = {}): PaginatedResult<T> {
@@ -188,39 +236,57 @@ export class Collection<T extends Entity> {
   }
 
   count(filter?: FilterFn<T>): number {
-    if (!filter) return this.items.size;
+    if (!filter) return this.state().items.size;
     return this.all().filter(filter).length;
   }
 
   clear(): void {
-    this.items.clear();
-    for (const indexMap of this.indexes.values()) {
-      indexMap.clear();
-    }
-    this.autoId = 1;
+    this.states.set(currentNamespace(), this.emptyState());
+  }
+
+  dropNamespace(namespace: string): boolean {
+    return this.states.delete(namespace);
+  }
+
+  namespaces(): string[] {
+    return [...this.states.keys()];
   }
 
   snapshot(): CollectionSnapshot<T> {
     return {
       items: this.all(),
-      autoId: this.autoId,
+      autoId: this.state().autoId,
       indexFields: this.fieldNames,
     };
   }
 
   restore(snap: CollectionSnapshot<T>): void {
     this.clear();
-    this.autoId = snap.autoId;
+    const state = this.state();
+    state.autoId = snap.autoId;
     for (const item of snap.items) {
-      this.items.set(item.id, item);
-      this.addToIndex(item);
+      state.items.set(item.id, item);
+      this.addToIndex(state, item);
     }
   }
 }
 
 export class Store {
   private collections = new Map<string, Collection<any>>();
-  private _data = new Map<string, unknown>();
+  private dataByNamespace = new Map<string, Map<string, unknown>>();
+
+  private data(): Map<string, unknown> {
+    const namespace = currentNamespace();
+    const existing = this.dataByNamespace.get(namespace);
+    if (existing) return existing;
+    const base = this.dataByNamespace.get(DEFAULT_NAMESPACE);
+    const created =
+      namespace !== DEFAULT_NAMESPACE && base
+        ? new Map([...base].map(([key, value]) => [key, cloneValue(value)] as const))
+        : new Map<string, unknown>();
+    this.dataByNamespace.set(namespace, created);
+    return created;
+  }
 
   collection<T extends Entity>(name: string, indexFields: (keyof T)[] = []): Collection<T> {
     const existing = this.collections.get(name);
@@ -241,18 +307,36 @@ export class Store {
   }
 
   getData<V>(key: string): V | undefined {
-    return this._data.get(key) as V | undefined;
+    return this.data().get(key) as V | undefined;
   }
 
   setData<V>(key: string, value: V): void {
-    this._data.set(key, value);
+    this.data().set(key, value);
   }
 
+  /** Wipes the current namespace only. */
   reset(): void {
     for (const collection of this.collections.values()) {
       collection.clear();
     }
-    this._data.clear();
+    this.data().clear();
+  }
+
+  /** Forgets a namespace; its next request forks the default namespace again. */
+  dropNamespace(namespace: string): boolean {
+    let dropped = this.dataByNamespace.delete(namespace);
+    for (const collection of this.collections.values()) {
+      dropped = collection.dropNamespace(namespace) || dropped;
+    }
+    return dropped;
+  }
+
+  namespaces(): string[] {
+    const names = new Set<string>(this.dataByNamespace.keys());
+    for (const collection of this.collections.values()) {
+      for (const namespace of collection.namespaces()) names.add(namespace);
+    }
+    return [...names].filter((namespace) => namespace !== DEFAULT_NAMESPACE).sort();
   }
 
   snapshot(): StoreSnapshot {
@@ -261,7 +345,7 @@ export class Store {
       collections[name] = col.snapshot();
     }
     const data: Record<string, unknown> = {};
-    for (const [key, value] of this._data) {
+    for (const [key, value] of this.data()) {
       data[key] = serializeValue(value);
     }
     return { collections, data };
@@ -279,9 +363,10 @@ export class Store {
       const col = this.collection(name, indexFields);
       col.restore(colSnap as CollectionSnapshot<any>);
     }
-    this._data.clear();
+    const data = this.data();
+    data.clear();
     for (const [key, value] of Object.entries(snap.data)) {
-      this._data.set(key, deserializeValue(value));
+      data.set(key, deserializeValue(value));
     }
   }
 }
